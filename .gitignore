@@ -1,0 +1,24 @@
+# Autocache ships zero dependencies on purpose. A committed node_modules or lockfile is a
+# spec violation, not just clutter - CI gates on their absence.
+node_modules/
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
+
+# Runtime state. Autocache writes to ~/.autocache, never into the repo, but a developer
+# pointing AUTOCACHE_HOME at a working copy would otherwise commit their own session history.
+.autocache/
+*.tmp
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Build/scratch
+dist/
+build/
+*.log

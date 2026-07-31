@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Syntax. Autocache has zero npm dependencies, so `node --check` is the whole
+  # lint story - nothing to install, nothing to pin, nothing to break.
+  # ---------------------------------------------------------------------------
+  syntax:
+    name: node --check (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Assert no dependencies crept in
+        shell: bash
+        run: |
+          if [ -d node_modules ]; then
+            echo "FAIL: node_modules is committed. Autocache ships zero dependencies."
+            exit 1
+          fi
+          if [ -f package-lock.json ] || [ -f yarn.lock ] || [ -f pnpm-lock.yaml ]; then
+            echo "FAIL: a lockfile is present. Autocache ships zero dependencies."
+            exit 1
+          fi
+
+      - name: Syntax check every .js under hooks/ and adapters/
+        run: node .github/scripts/check-syntax.cjs
+
+  # ---------------------------------------------------------------------------
+  # Every .json in the repository must parse, and the manifests that ship the
+  # plugin must have the right shape - including quoted ${CLAUDE_PLUGIN_ROOT},
+  # because Windows plugin paths contain spaces.
+  # ---------------------------------------------------------------------------
+  json:
+    name: validate JSON
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Parse and shape-check every JSON file
+        run: node .github/scripts/validate-json.cjs
+
+  # ---------------------------------------------------------------------------
+  # THE MOST IMPORTANT JOB IN THIS FILE.
+  #
+  # A continuity tool that breaks the session it is meant to protect is worse
+  # than no tool. Every hook and adapter is fed malformed stdin, empty stdin, a
+  # nonexistent AUTOCACHE_HOME, an unwritable one, and a corrupt state directory,
+  # and must exit 0 in every single case. If this job fails, the build fails -
+  # no matter what else passed.
+  # ---------------------------------------------------------------------------
+  fail-open:
+    name: fail-open regression (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Every hook exits 0 under every failure mode
+        run: node .github/scripts/fail-open.cjs
+
+      - name: Report any state written outside the sandbox
+        if: always()
+        shell: bash
+        run: |
+          # Advisory, not a gate. Every probe redirects AUTOCACHE_HOME, HOME, and
+          # USERPROFILE into a sandbox, so no fallback path should reach the real
+          # home. State appearing there means a hook resolved the home directory
+          # without honoring the environment - worth knowing, and worth an issue.
+          if [ -d "$HOME/.autocache" ]; then
+            echo "NOTE: state exists at \$HOME/.autocache after the run."
+            echo "Check that the state root is resolved from AUTOCACHE_HOME, then os.homedir()."
+            find "$HOME/.autocache" -maxdepth 2 -print || true
+          else
+            echo "ok: no state written outside the sandbox"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Project rule: emoji are chat-only and never written into files.
+  # ---------------------------------------------------------------------------
+  hygiene:
+    name: repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: No emoji in repository files
+        run: node .github/scripts/no-emoji.cjs
+
+      - name: Required files are present
+        shell: bash
+        run: |
+          missing=0
+          for f in README.md LICENSE CONTRIBUTING.md SECURITY.md CHANGELOG.md \
+                   docs/install.md docs/state-format.md docs/hooks.md docs/faq.md docs/upgrade.md; do
+            if [ ! -f "$f" ]; then
+              echo "FAIL: missing $f"
+              missing=1
+            fi
+          done
+          exit $missing

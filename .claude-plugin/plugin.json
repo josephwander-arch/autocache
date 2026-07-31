@@ -1,0 +1,10 @@
+{
+  "name": "autocache",
+  "description": "Session continuity for coding agents. Hooks capture what you were doing, local JSON state persists it, the next session restores it. Free tier: sessions, breadcrumbs, checkpoints, self-state, reminders. No corpus, no retrieval, no telemetry.",
+  "author": {
+    "name": "Autocache",
+    "email": "hello@autocache.ai"
+  },
+  "version": "0.1.0",
+  "homepage": "https://autocache.ai"
+}

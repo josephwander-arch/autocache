@@ -1,0 +1,78 @@
+name: Feature request
+description: Propose something Autocache should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Autocache has a fixed boundary, and knowing it before you write saves your time:
+
+        **Autocache remembers your work. Autonomous remembers your knowledge.**
+
+        Autocache is single machine, single work arc: sessions, breadcrumbs, checkpoints,
+        self-state, scratch tags, local reminders. It never gets smarter; it just never
+        forgets what it was doing.
+
+        Out of scope by design, not by backlog: extraction, semantic or lexical or graph
+        retrieval, index maintenance, knowledge-base writes with propagation, consolidation
+        and staleness detection, context budgeting, learning analytics, and eval. Those need
+        an index and a running server, which is why they are the paid tier. Requests for
+        them will be closed with a pointer to docs/upgrade.md rather than left open.
+
+        Also fixed: zero npm dependencies, no binary in v1, no network calls, and every
+        hook fails open.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you actually trying to do, and what goes wrong today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead. Be concrete about the trigger and the output.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - Grok
+        - All surfaces
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints this proposal respects
+      options:
+        - label: Node standard library only - no npm dependencies
+          required: true
+        - label: No network calls
+          required: true
+        - label: Fails open - cannot block, crash, or hang a session
+          required: true
+        - label: Does not require an index, a corpus, or a running server
+          required: true
+
+  - type: textarea
+    id: state-impact
+    attributes:
+      label: State impact
+      description: Does this add or change anything under `~/.autocache/`? If so, sketch the schema and say how existing state stays readable.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing, or doing it yourself in a local hook.
