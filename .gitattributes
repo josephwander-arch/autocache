@@ -1,0 +1,30 @@
+# Autocache is authored on Windows and installed on Windows, macOS and Linux.
+#
+# install.sh is the case that actually breaks: a POSIX shell script checked out with CRLF
+# fails with "bad interpreter: /bin/sh^M" or silently mis-parses, and the report reads as
+# "the installer is broken on Mac" rather than "line endings". Pin it, and pin every other
+# text type while we are here so the repo is byte-stable across contributors.
+
+* text=auto eol=lf
+
+# Anything a POSIX shell or Node executes must be LF, no exceptions.
+*.sh    text eol=lf
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.mjs   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.html  text eol=lf
+
+# PowerShell is Windows-native and tolerates both; CRLF keeps it native in editors there.
+*.ps1   text eol=crlf
+
+# Never touch binaries.
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
+*.exe   binary
+*.zip   binary
