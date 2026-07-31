@@ -124,7 +124,7 @@ if ($claudePresent) {
             Say '  Run this inside Claude Code, from any session:'
             Say "    /plugin marketplace add $RepoRoot"
             Say '    /plugin install autocache'
-            Say '  (or /plugin marketplace add autocache-ai/autocache to take it from GitHub)'
+            Say '  (or /plugin marketplace add josephwander-arch/autocache to take it from GitHub)'
             Say '  This installer deliberately does not hand-edit the Claude Code plugin'
             Say '  directory - the harness owns it, and writing it behind its back is how'
             Say '  plugin installs get corrupted.'

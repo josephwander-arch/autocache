@@ -54,7 +54,7 @@ A     autocache.ai     185.199.108.153
 A     autocache.ai     185.199.109.153
 A     autocache.ai     185.199.110.153
 A     autocache.ai     185.199.111.153
-CNAME www              autocache-ai.github.io
+CNAME www              josephwander-arch.github.io
 ```
 
 Enable **Enforce HTTPS** once the certificate is issued.

@@ -19,7 +19,7 @@ Claude Code loads Autocache as a plugin. The plugin registers the hooks, ships t
 skills, and adds the slash commands.
 
 ```
-/plugin marketplace add autocache-ai/autocache
+/plugin marketplace add josephwander-arch/autocache
 /plugin install autocache
 ```
 
@@ -40,7 +40,7 @@ are on record. If the command is missing, the plugin did not load - check
 Clone the repository and point Claude Code at the local directory:
 
 ```sh
-git clone https://github.com/autocache-ai/autocache.git
+git clone https://github.com/josephwander-arch/autocache.git
 ```
 
 ```
@@ -62,7 +62,7 @@ format, so the installer materializes the same behavior into those directories.
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/autocache-ai/autocache/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/josephwander-arch/autocache/main/install.sh -o install.sh
 less install.sh      # read it before you run it
 sh install.sh
 ```
@@ -70,7 +70,7 @@ sh install.sh
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/autocache-ai/autocache/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/josephwander-arch/autocache/main/install.ps1 -OutFile install.ps1
 Get-Content ./install.ps1   # read it before you run it
 ./install.ps1
 ```

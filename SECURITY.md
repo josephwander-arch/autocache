@@ -5,7 +5,7 @@
 Do not open a public issue.
 
 Use GitHub's private reporting:
-https://github.com/autocache-ai/autocache/security/advisories/new
+https://github.com/josephwander-arch/autocache/security/advisories/new
 
 Include the version or commit, the platform, what an attacker can do, and the smallest
 reproduction you have.

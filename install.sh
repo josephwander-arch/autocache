@@ -119,7 +119,7 @@ if [ -d "$CLAUDE_DIR" ] || command -v claude >/dev/null 2>&1; then
       say "  Run this inside Claude Code, from any session:"
       say "    /plugin marketplace add $REPO_ROOT"
       say "    /plugin install autocache"
-      say "  (or /plugin marketplace add autocache-ai/autocache to take it from GitHub)"
+      say "  (or /plugin marketplace add josephwander-arch/autocache to take it from GitHub)"
       say "  This installer deliberately does not hand-edit the Claude Code plugin"
       say "  directory - the harness owns it, and writing it behind its back is how"
       say "  plugin installs get corrupted."

@@ -6,7 +6,7 @@ Free-tier session continuity for AI coding agents. Hooks capture the shape of yo
 work as it happens, state persists as plain JSON on your own disk, and the next
 session restores it. No server, no binary, no npm dependencies, no account.
 
-[![CI](https://github.com/autocache-ai/autocache/actions/workflows/ci.yml/badge.svg)](https://github.com/autocache-ai/autocache/actions/workflows/ci.yml)
+[![CI](https://github.com/josephwander-arch/autocache/actions/workflows/ci.yml/badge.svg)](https://github.com/josephwander-arch/autocache/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## The problem
@@ -24,7 +24,7 @@ Nothing about that is a model problem. It is a state problem, and state belongs 
 ### Claude Code
 
 ```
-/plugin marketplace add autocache-ai/autocache
+/plugin marketplace add josephwander-arch/autocache
 /plugin install autocache
 ```
 
@@ -38,13 +38,13 @@ skills, hooks, and rules there.
 
 ```sh
 # inspect first, then run
-curl -fsSL https://raw.githubusercontent.com/autocache-ai/autocache/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/josephwander-arch/autocache/main/install.sh -o install.sh
 sh install.sh
 ```
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/autocache-ai/autocache/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/josephwander-arch/autocache/main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 

@@ -157,11 +157,11 @@ the failure mode.
 
 ## GitHub repository
 
-Public repo `autocache-ai/autocache`. Must contain:
+Public repo `josephwander-arch/autocache`. Must contain:
 
 - `README.md` — what it is, the free/paid line, 30-second install, screenshot slot
 - `LICENSE` — MIT
-- `.claude-plugin/marketplace.json` — so `/plugin marketplace add autocache-ai/autocache` works
+- `.claude-plugin/marketplace.json` — so `/plugin marketplace add josephwander-arch/autocache` works
 - `install.sh` / `install.ps1` — one-liner installers for the non-Claude-Code surfaces
 - `docs/` — install per surface, state format, hook reference, FAQ, upgrade path
 - `.github/workflows/ci.yml` — lint hooks with `node --check`, validate every JSON against its schema, run the hook test fixtures

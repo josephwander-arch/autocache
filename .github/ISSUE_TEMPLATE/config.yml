@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/autocache-ai/autocache/security/advisories/new
+    url: https://github.com/josephwander-arch/autocache/security/advisories/new
     about: Report privately. Do not open a public issue. See SECURITY.md.
   - name: Question or usage help
-    url: https://github.com/autocache-ai/autocache/discussions
+    url: https://github.com/josephwander-arch/autocache/discussions
     about: Ask in Discussions. Check docs/faq.md first - it covers the common ones.
   - name: Paid tier (Autonomous)
-    url: https://github.com/autocache-ai/autocache/blob/main/docs/upgrade.md
+    url: https://github.com/josephwander-arch/autocache/blob/main/docs/upgrade.md
     about: Extraction, retrieval, consolidation, context budgeting, and eval are Autonomous, not Autocache.

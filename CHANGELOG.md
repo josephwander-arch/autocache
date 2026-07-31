@@ -84,5 +84,5 @@ Autocache remembers your work. Autonomous remembers your knowledge.
 - State is local. There is no cross-machine sync in v1.
 - Telemetry is off by default and no hook makes any network call.
 
-[Unreleased]: https://github.com/autocache-ai/autocache/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/autocache-ai/autocache/releases/tag/v0.1.0
+[Unreleased]: https://github.com/josephwander-arch/autocache/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/josephwander-arch/autocache/releases/tag/v0.1.0

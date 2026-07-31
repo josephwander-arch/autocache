@@ -58,7 +58,7 @@ is probably no, and finding that out after the work is done helps nobody.
 ## Setup
 
 ```sh
-git clone https://github.com/autocache-ai/autocache.git
+git clone https://github.com/josephwander-arch/autocache.git
 cd autocache
 node --version    # any currently supported release
 ```
