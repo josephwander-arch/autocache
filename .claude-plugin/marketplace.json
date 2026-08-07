@@ -15,10 +15,7 @@
         "email": "hello@autocache.ai"
       },
       "category": "productivity",
-      "source": {
-        "source": "git",
-        "url": "https://github.com/josephwander-arch/autocache.git"
-      },
+      "source": "./",
       "homepage": "https://autocache.ai",
       "license": "MIT",
       "keywords": [
