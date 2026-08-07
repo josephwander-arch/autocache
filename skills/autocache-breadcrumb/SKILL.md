@@ -1,6 +1,6 @@
 ---
 name: autocache-breadcrumb
-description: Tracked-operation discipline - open a breadcrumb, log steps at real milestones, complete or abort at the end. Fires before any job with three or more steps, any build, fix, refactor, migration, deployment, or multi-file edit; on /breadcrumb; on a PreToolUse breadcrumb nudge; and on phrases like "track this", "start working on", "let's build", "walk through", "one at a time", "abandon this", "scrap that approach", "done with this".
+description: Tracked-operation discipline - open a breadcrumb, log steps at real milestones, append still-open work as pending steps, record decisions the arc cannot settle, complete or abort at the end. Fires before any job with three or more steps, any build, fix, refactor, migration, deployment, or multi-file edit; on /breadcrumb; on a PreToolUse breadcrumb nudge; and on phrases like "track this", "start working on", "let's build", "walk through", "one at a time", "note this for later", "open question", "needs a decision", "blocked on", "abandon this", "scrap that approach", "done with this".
 ---
 
 # Autocache: Breadcrumb
@@ -48,10 +48,54 @@ last step; if it flags a long gap, log one.
 Each step records: what changed, the exact paths touched, how it was verified,
 and what is next.
 
+## Pending steps: the micro-fix boundary
+
+The planned list grows mid-operation; discovering work is normal. The rule for
+whether it gets an entry is a boundary, not a judgment call:
+
+- **Discovered and finished before your current output ends** - no entry. A
+  micro-fix folds into the milestone it belongs to; recording it separately is
+  noise.
+- **Still open when your output ends** - it MUST be appended as a pending step
+  (`/breadcrumb add`). No exceptions. Work that exists only in your head does not
+  exist for the next session, and the next session is the whole point.
+
+The test is mechanical: at the end of every response, anything you know is open
+and unrecorded gets appended before you stop.
+
+## Decisions the arc cannot settle
+
+When the work hits a genuine fork - a question with 2-3 defensible answers - record
+it instead of guessing: `/breadcrumb decide` with the question, the options, your
+lean if you have one, and `waits_on`:
+
+- `waits_on: "user"` - only the user's actual answer resolves it. Ask; never
+  resolve it yourself, and never treat silence as an answer.
+- `waits_on: "any_informed_session"` - any agent with the full recorded picture may
+  decide, and the resolution must record `basis`: what in the record justified the
+  call. "It seemed right" is not a basis.
+
+`blocks` names the planned-step indexes that must wait. Everything not blocked
+proceeds freely - a decision is a gate on specific steps, not a stop sign on the
+arc. Never work a blocked step; resolve first. Resolution records `chosen`,
+`decided_by`, `basis`, and `decided_at`, so the next session inherits the answer
+and the reasoning, not just the outcome.
+
+## Frozen records and the chain
+
+A breadcrumb with `forked_to` set has been forked away: another record now owns
+the remaining work. It is frozen - every step, add, decide, resolve, complete, or
+abort against it is rejected with a message naming the chain head. When you see
+that rejection, stop and catch up on the head; do not route around it. Taking the
+work back means forking the current head (see `autocache-handoff` for the fork
+protocol and the takeover eligibility ladder).
+
 ## Complete versus abort
 
 - **Complete** when the stated targets are in their intended final state and
   verified. Completing an operation whose work you reverted is a false record.
+  Completing a chain head also closes every still-open ancestor as
+  `completed_via` the head - the chain finishes as a unit.
 - **Abort** when the approach was abandoned, the work was rolled back, or the
   arc is being replaced by a different one. Abort with the reason - a recorded
   dead end is worth more than a missing entry.

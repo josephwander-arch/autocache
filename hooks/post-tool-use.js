@@ -33,7 +33,18 @@ try {
   // ---- breadcrumb ---------------------------------------------------------
   const bc = store.activeBreadcrumb();
   let nudge = '';
-  if (bc) {
+  if (bc && store.isFrozen(bc)) {
+    // The pointer names a record another session forked away. Frozen records
+    // are read-only: never step them, never count against them. One advisory
+    // line per record names the chain head so the returning session catches
+    // up instead of writing into a dead branch.
+    a.breadcrumb_id = bc.id || a.breadcrumb_id || '';
+    if (cfg.quiet !== true && a.frozen_warned_id !== (bc.id || '')) {
+      const notice = store.frozenNotice(bc);
+      if (notice) nudge = '[autocache] ' + notice;
+      a.frozen_warned_id = bc.id || '';
+    }
+  } else if (bc) {
     a.breadcrumb_id = bc.id || a.breadcrumb_id || '';
     bc.tool_calls = (Number(bc.tool_calls) || 0) + 1;
     if (touched.length) bc.touched_files = store.mergeTouched(bc.touched_files, touched, cap);

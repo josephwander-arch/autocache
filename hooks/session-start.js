@@ -63,6 +63,46 @@ try {
     if (Array.isArray(bc.touched_files) && bc.touched_files.length) {
       lines.push('  files: ' + bc.touched_files.slice(0, 8).join(', '));
     }
+
+    // ---- fork chain: a frozen record means the work moved -----------------
+    if (store.isFrozen(bc)) {
+      const notice = store.frozenNotice(bc);
+      if (notice) lines.push('  FROZEN: ' + store.truncate(notice, 300));
+    }
+
+    // ---- decisions still awaiting resolution ------------------------------
+    const decs = store.openDecisions(bc);
+    if (decs.length) {
+      const blocked = store.blockedStepIndexes(bc);
+      lines.push('  awaiting decision (' + decs.length
+        + (blocked.size ? ', blocking ' + blocked.size + ' pending step(s)' : '') + '): '
+        + decs.slice(0, 3).map((d) => store.truncate(d.question || d.id || 'unnamed', 90)
+          + ' [waits on ' + (d.waits_on || 'user') + ']').join(' | '));
+    }
+  } else {
+    // No open breadcrumb, but the pointer may still name a record another
+    // session finished or aborted through the fork chain. Surface the
+    // pointer rather than leaving a dangling operation; an incomplete chain
+    // keeps surfacing until it is completed or explicitly retired.
+    const ptr = store.readJSON('breadcrumbs/active.json', null);
+    const ptrId = ptr && typeof ptr === 'object' && !Array.isArray(ptr)
+      ? (typeof ptr.breadcrumb_id === 'string' ? ptr.breadcrumb_id
+        : (typeof ptr.id === 'string' ? ptr.id : null))
+      : null;
+    if (ptrId) {
+      const rec = store.readBreadcrumb(ptrId);
+      if (rec && rec.completed_via) {
+        lines.push('Breadcrumb ' + rec.id + ' was finished elsewhere - completed via '
+          + rec.completed_via + '. Nothing to resume on it.');
+      } else if (rec && !store.isOpen(rec) && rec.retired !== true
+        && (rec.forked_from || rec.forked_to)
+        && typeof rec.status === 'string' && /^aborted$/i.test(rec.status)) {
+        lines.push('Chain tail ' + rec.id + ' was aborted'
+          + (rec.outcome ? ': ' + store.truncate(rec.outcome, 120) : '')
+          + '. The chain is still incomplete - adopt it with /breadcrumb adopt '
+          + rec.id + ' or retire it with a recorded reason.');
+      }
+    }
   }
 
   // ---- last auto-checkpoint (the Stop-hook arc) ---------------------------

@@ -133,3 +133,25 @@ not commit anything unless the user asks.
 
 State stays on this machine. A handoff does not send anything anywhere - the other
 agent reads the same `~/.autocache/` directory, or you paste the markdown.
+
+## Handing off an open breadcrumb: packet plus fork
+
+The packet carries the knowledge; the fork chain carries the ownership. They are
+complementary, not alternatives.
+
+- **Announced handoff** (you are passing the work): write the packet, leave the
+  breadcrumb open, and say in the packet that the receiver should fork it on arrival.
+  The receiver runs `/breadcrumb fork <id>` - the new record carries the remaining
+  steps and open decisions, the old one freezes, and every later write against it is
+  rejected with a message naming the new head. That rejection is the mechanism that
+  stops two sessions from working the same operation.
+- **Take-back** (the work comes home): fork the current head. Never re-open a frozen
+  ancestor - the chain grows forward and every hop stays attributed through
+  `forked_by` and `forked_at`.
+- **Takeover without a pass** (the holder went quiet): apply the eligibility ladder
+  in the `autocache-handoff` skill before forking. Forking a live session's head can
+  corrupt the operation; the ladder exists so that only demonstrably idle work gets
+  taken.
+- Whoever completes the final head closes the whole chain: every still-open ancestor
+  is marked `completed_via` the head, so the session that originally held the work
+  resumes into a pointer, not a dangling operation.

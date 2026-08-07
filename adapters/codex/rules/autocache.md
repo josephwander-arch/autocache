@@ -49,7 +49,10 @@ breadcrumb if there is one, due reminders, and self-state. Use it.
 - If a breadcrumb is open, say what it is and what step it stopped at **before**
   starting anything new. Do not silently start a second arc on top of an open one.
 - If the open breadcrumb was started by another surface, adopt it rather than
-  reopening the same work. There is one owner per arc at a time.
+  reopening the same work. There is one owner per arc at a time. Taking over a
+  head another session may still hold means forking it, under the eligibility
+  ladder in `autocache-handoff` - and a record marked `forked_to` is frozen:
+  never write to it, catch up on the chain head it names instead.
 - If the restore block is empty, say so plainly. Do not invent recalled context.
   An invented memory is worse than an admitted blank.
 

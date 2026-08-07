@@ -1,6 +1,6 @@
 ---
 name: autocache-resume
-description: Reconstruct what the previous session was doing before answering or acting. Fires at session start, on /resume, and whenever the user opens with continuity language - "where were we", "what was I doing", "pick up where we left off", "continue", "still working on", "did we finish", "what's left", "yesterday", "earlier", "before the crash" - or when a SessionStart restore block is present, or when the user references work you have no record of in this context.
+description: Reconstruct what the previous session was doing before answering or acting. Fires at session start, on /resume, and whenever the user opens with continuity language - "where were we", "what was I doing", "pick up where we left off", "continue", "still working on", "did we finish", "what's left", "yesterday", "earlier", "before the crash" - or when a SessionStart restore block is present (including a FROZEN breadcrumb or fork-chain pointer), or when the user references work you have no record of in this context.
 ---
 
 # Autocache: Resume
@@ -19,6 +19,8 @@ Read it directly if the SessionStart restore block is missing or truncated.
 2. **If absent or thin, read in this order and stop as soon as you can act:**
    - `sessions/index.json` -> newest entry -> `sessions/<id>.json` (summary, findings)
    - `breadcrumbs/active.json` -> if non-null, `breadcrumbs/<id>.json` (steps, targets)
+   - if that record carries `forked_to`, it is frozen - follow the chain to its
+     head before reasoning about state (see "Catching up on a fork chain")
    - `checkpoints/` -> newest checkpoint for the same arc
    - `state/self_state.json` and `state/bag.json`
    - `reminders.json` -> anything due
@@ -30,14 +32,44 @@ Read it directly if the SessionStart restore block is missing or truncated.
 5. **State gaps explicitly.** "No session record found" is a valid, useful answer.
    Never invent continuity you cannot read.
 6. **Adopt before you act.** If an open breadcrumb belongs to a different agent or
-   surface and is still fresh, say so and ask before taking it over. See
-   `autocache-breadcrumb`.
+   surface and is still fresh, say so and ask before taking it over. Taking over
+   a live head means forking it, and forking has an eligibility ladder - see
+   `autocache-handoff`.
+
+## Catching up on a fork chain
+
+A record with `forked_to` set is frozen: the work moved, and this record is
+read-only history. Every write against it is rejected naming the chain head -
+that rejection is your catch-up signal, not an error to work around. Follow
+`forked_to` hop by hop to the head, then act on the head's status:
+
+- **Head open** - the work is live in another session's hands. Read the chain's
+  steps and decisions to catch up, then contribute read-only, ask for a pass, or
+  take over by forking the head under the eligibility ladder in
+  `autocache-handoff`. Never write to any frozen record on the way.
+- **Head complete** - the chain is done. Ancestors carry `completed_via` with
+  the head id: report "finished elsewhere, completed via <head>" in one line.
+  There is nothing to resume.
+- **Head aborted, not retired** - the chain tail is adoptable work. Offer to
+  adopt it (`/breadcrumb adopt <tail-id>`) or to retire the chain with a
+  recorded reason. An incomplete chain keeps surfacing until it is completed
+  through the chain or explicitly retired - never silently drop one.
+- **Open decisions** - a step blocked by an unresolved decision stays unworked.
+  If it waits on the user, surface the question, the options, and any recorded
+  lean; only the user's answer resolves it. Unblocked steps proceed freely.
+
+Before forking across machines, compare the record file's mtime against its
+recorded last activity. An mtime newer than the record explains means a sync is
+in progress: wait for it to settle, then re-read.
 
 ## Do not
 
 - Do not open a new breadcrumb when one is already open for the same arc.
 - Do not close, complete, or clear anything during resume. Resume is read-only
-  except for adopting an operation you intend to continue.
+  except for adopting an operation you intend to continue, or forking a head
+  you are eligible to take over.
+- Do not write to a frozen record, and do not re-open one. The chain only grows
+  forward from its head.
 - Do not claim the tool "remembered" anything that is not in the state files.
 
 ## Worked example

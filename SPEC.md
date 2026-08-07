@@ -87,7 +87,7 @@ Derived from the tiering of Autonomous's 121 tools. Free = these groups only:
 | Boot / identity | Restore prior context at session start; report status |
 | Session lifecycle | start, add finding, list, get, close, export, delete |
 | Session summary / handoff | Write a continuation packet another agent can execute |
-| Breadcrumbs | start, step, complete, abort, status, list, adopt, backup |
+| Breadcrumbs | start, step, add, complete, abort, status, list, adopt, backup; decisions (raise, resolve); fork-chain takeover (fork, retire) |
 | Checkpoint / rollback | save, load, clear; git rollback helper |
 | Self-state + bag | self_state get/update; bag tag/read/clear |
 | Local reminders | add, list, complete, delete, check_due, recurring; time check |
@@ -99,6 +99,66 @@ do not stub, do not mention as "coming soon" in a way that implies free):
 extraction, semantic/lexical/graph retrieval, index maintenance, knowledge-base
 writes with propagation, consolidation/dedup/staleness, context budgeting
 (`vol_load`/`warm`/`offload`/`degrade_check`), learning analytics, eval.
+
+## Fork-chain: work that outlives its session
+
+Breadcrumbs carry three extensions so an operation can survive discovery,
+indecision, and takeover. All three are pure work-continuity - they record what is
+happening to the work, and nothing here learns, retrieves, or indexes. They stay
+entirely on the free side of the line.
+
+**Pending steps grow.** A breadcrumb's planned list is not fixed at start. The
+boundary is mechanical: work discovered and finished before the agent's current
+output ends needs no entry; work still open when the output ends MUST be appended
+as a pending step. Unrecorded open work is invisible to the next session, and the
+next session is the product.
+
+**Decisions are recorded, not guessed.** A breadcrumb carries decision entries:
+id, question, 2-3 options, an optional lean, `waits_on`, and the `planned_steps`
+indexes it blocks. Steps not blocked proceed freely; a blocked step is not worked
+until the decision resolves. `waits_on: "user"` resolves only with the user's
+actual answer; `waits_on: "any_informed_session"` lets any agent with the full
+recorded picture decide, and the resolution's `basis` field records what justified
+the call. Resolution always records `chosen`, `decided_by`, and `decided_at`.
+
+**Takeover is a fork chain with exactly one live head.** Forking a live head -
+active, not forked away, not terminal, with remaining steps or unresolved
+decisions - writes a NEW breadcrumb carrying the remaining steps and unresolved
+decisions (block indexes reindexed), with `forked_from` pointing back; the source
+is then marked `forked_to` / `forked_by` / `forked_at` and is FROZEN. Fork ids are
+guaranteed unique against the source - a discriminator suffix on collision - so a
+record can never be `forked_to` itself. A frozen record rejects every step,
+add, decision, complete, and abort write, and the rejection names the chain head
+so the returning session catches up before continuing. Take-back is a fork of the
+current head: the chain grows, every hop attributed.
+
+Completing the head walks the `forked_from` ancestry and marks every still-open
+ancestor `completed_via` the head id, so any earlier session resumes into
+"finished elsewhere, here is the pointer" rather than a dangling operation.
+Aborting a head leaves the ancestors frozen pointing forward, and the tail
+surfaces as adoptable work. An incomplete chain is never silently pruned: it keeps
+surfacing at every restore until it is completed through the chain or explicitly
+retired with a recorded reason.
+
+**Takeover eligibility is protocol, not code.** The hooks stay advisory and the
+state layer only refuses what is structurally wrong (writes to a frozen record);
+who may fork when is a judgment the skills spell out. Fork an idle head when the
+holder is demonstrably inactive past a threshold (90 seconds on the same machine;
+2 minutes across synced machines; 3 minutes after a detectable file sync
+settles), on an explicit pass, or on the user's direction. When activity cannot
+be determined, the agent must tell the user which session holds the work and that
+forking a live session could corrupt it, wait 3 minutes, re-check, and proceed
+only on the user's positive affirmation given after that risk statement. A
+demonstrably active holder is never forked - read-only or ask for a pass. Before
+any cross-machine fork, the record file's mtime is compared against its recorded
+last activity; an mtime newer than the record explains means a sync is in
+progress. The full ladder lives in the `autocache-handoff` skill and is
+referenced from `autocache-resume` and `/breadcrumb`. "Synced machines" here
+means the user syncing the state directory with their own tooling - Autocache
+still ships no sync, per the honesty constraints below.
+
+State-format details and worked records are in `docs/state-format.md`. Old records
+without any of these fields keep working unchanged; every new field is optional.
 
 ## Surface: Claude Code plugin
 

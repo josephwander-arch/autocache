@@ -156,6 +156,16 @@ function stepDone(step) {
 }
 
 /**
+ * Log-style step entries carry a timestamp, source, or tool - they record work
+ * already done. Bare text and explicitly pending entries are still open.
+ */
+function stepLogged(step) {
+  if (!step || typeof step !== 'object') return false;
+  if (typeof step.status === 'string' && /^(pending|open|todo|blocked)$/i.test(step.status)) return false;
+  return !!(step.at || step.source || step.tool);
+}
+
+/**
  * Split a breadcrumb into completed and remaining step text.
  * Tolerant of several shapes because the command layer owns breadcrumb creation.
  */
@@ -182,10 +192,25 @@ function breadcrumbProgress(bc) {
     for (const s of steps) {
       const text = stepText(s);
       if (!text) continue;
-      const done = stepDone(s) || logged.some((t) => t.toLowerCase() === text.toLowerCase());
+      const done = stepDone(s) || stepLogged(s) || logged.some((t) => t.toLowerCase() === text.toLowerCase());
       push(done ? out.completed : out.remaining, text);
     }
     for (const t of logged) push(out.completed, t);
+    // Planned steps not matched by a completed one are still open. Matching
+    // mirrors the command layer: a logged step covers a planned one when it
+    // contains the planned text's first 24 characters.
+    if (Array.isArray(bc.planned_steps)) {
+      for (const p of bc.planned_steps) {
+        const text = stepText(p);
+        if (!text) continue;
+        const key = text.toLowerCase();
+        const covered = out.completed.some((t) => {
+          const k = t.toLowerCase();
+          return k === key || k.includes(key.slice(0, 24));
+        });
+        if (!covered) push(out.remaining, text);
+      }
+    }
     if (Array.isArray(bc.remaining)) {
       for (const r of bc.remaining) push(out.remaining, stepText(r));
     }
@@ -232,13 +257,24 @@ function isOpen(bc) {
   return true;
 }
 
-/** Persist a breadcrumb obtained from activeBreadcrumb(). */
-function saveBreadcrumb(bc) {
+/**
+ * Persist a breadcrumb obtained from activeBreadcrumb().
+ *
+ * A record whose on-disk copy has been forked away (`forked_to` set) is
+ * frozen: the write is refused and false is returned, so no code path can
+ * mutate a dead branch by accident. Chain management (freezing a source,
+ * completion propagation, retirement) passes allowFrozen = true.
+ */
+function saveBreadcrumb(bc, allowFrozen) {
   try {
     if (!bc || typeof bc !== 'object') return false;
     const source = bc.__autocache_source;
     const copy = Object.assign({}, bc);
     delete copy.__autocache_source;
+    if (!allowFrozen && copy.id) {
+      const disk = readJSON('breadcrumbs/' + safeName(copy.id) + '.json', null);
+      if (disk && typeof disk === 'object' && !Array.isArray(disk) && disk.forked_to) return false;
+    }
     copy.updated_at = new Date().toISOString();
     let ok = false;
     if (copy.id) ok = writeJSON('breadcrumbs/' + safeName(copy.id) + '.json', copy) || ok;
@@ -247,6 +283,306 @@ function saveBreadcrumb(bc) {
   } catch (e) {
     return false;
   }
+}
+
+/* -------------------------------------------------------------- fork chain */
+
+/** Full record for a breadcrumb id, or null. */
+function readBreadcrumb(id) {
+  if (!id) return null;
+  const rec = readJSON('breadcrumbs/' + safeName(id) + '.json', null);
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return null;
+  rec.id = rec.id || String(id);
+  return rec;
+}
+
+/** A record that has been forked away is frozen: read-only forever. */
+function isFrozen(bc) {
+  return !!(bc && typeof bc === 'object' && typeof bc.forked_to === 'string' && bc.forked_to);
+}
+
+/**
+ * Follow forked_to pointers to the live end of the chain. Cycle-safe.
+ * Returns { id, record }; record is null when the head file is missing.
+ */
+function chainHead(idOrRecord) {
+  try {
+    let rec = (idOrRecord && typeof idOrRecord === 'object') ? idOrRecord : readBreadcrumb(idOrRecord);
+    if (!rec) return { id: String(idOrRecord || ''), record: null };
+    const seen = new Set();
+    while (isFrozen(rec) && rec.id && !seen.has(rec.id) && seen.size < 100) {
+      seen.add(rec.id);
+      const next = readBreadcrumb(rec.forked_to);
+      if (!next) return { id: rec.forked_to, record: null };
+      rec = next;
+    }
+    return { id: rec.id || '', record: rec };
+  } catch (e) {
+    return { id: '', record: null };
+  }
+}
+
+/**
+ * One line explaining why a frozen record rejects writes, naming the chain
+ * head so the returning session catches up instead of writing a dead branch.
+ * Empty string when the record is not frozen.
+ */
+function frozenNotice(bc) {
+  try {
+    if (!isFrozen(bc)) return '';
+    const head = chainHead(bc);
+    const headBit = head.record
+      ? head.id + ' [' + (head.record.status || 'open') + ']'
+      : head.id + ' (record missing)';
+    return 'breadcrumb ' + (bc.id || '?') + ' is frozen: forked to ' + bc.forked_to
+      + (bc.forked_by ? ' by ' + bc.forked_by : '')
+      + (bc.forked_at ? ' at ' + bc.forked_at : '')
+      + '. Chain head: ' + headBit + '. Catch up on the head before continuing.';
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Decisions still awaiting resolution. */
+function openDecisions(bc) {
+  const out = [];
+  try {
+    const list = bc && Array.isArray(bc.decisions) ? bc.decisions : [];
+    for (const d of list) {
+      if (!d || typeof d !== 'object') continue;
+      if (typeof d.status === 'string' && /^(resolved|closed|done)$/i.test(d.status)) continue;
+      if (d.chosen != null && d.chosen !== '') continue;
+      out.push(d);
+    }
+  } catch (e) { /* fall through */ }
+  return out;
+}
+
+/** planned_steps indexes blocked by an open decision. */
+function blockedStepIndexes(bc) {
+  const out = new Set();
+  try {
+    for (const d of openDecisions(bc)) {
+      const blocks = Array.isArray(d.blocks) ? d.blocks : [];
+      for (const b of blocks) {
+        const n = Number(b);
+        if (Number.isInteger(n) && n >= 0) out.add(n);
+      }
+    }
+  } catch (e) { /* fall through */ }
+  return out;
+}
+
+/**
+ * The not-yet-done work a fork must carry: `carried` is the ordered list of
+ * remaining step texts, `map` maps each old planned_steps index onto its new
+ * index so decision blocks can be reindexed. Checklist-shape pending entries
+ * from steps[] are appended after the planned list; they get no map entry
+ * because decision blocks index planned_steps only.
+ */
+function remainingPlanned(bc) {
+  const out = { carried: [], map: {} };
+  try {
+    if (!bc || typeof bc !== 'object') return out;
+    const prog = breadcrumbProgress(bc);
+    const completed = prog.completed.map((t) => t.toLowerCase());
+    const isDone = (text) => {
+      const key = text.toLowerCase();
+      return completed.some((k) => k === key || k.includes(key.slice(0, 24)));
+    };
+    const planned = Array.isArray(bc.planned_steps) ? bc.planned_steps : [];
+    planned.forEach((p, i) => {
+      const text = stepText(p);
+      if (!text || isDone(text)) return;
+      out.map[i] = out.carried.length;
+      out.carried.push(text);
+    });
+    const seen = new Set(out.carried.map((t) => t.toLowerCase()));
+    for (const t of prog.remaining) {
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.carried.push(t);
+    }
+  } catch (e) { /* fall through */ }
+  return out;
+}
+
+/**
+ * Fork a live chain head: write a new breadcrumb carrying the remaining steps
+ * and unresolved decisions (blocks reindexed), then freeze the source with
+ * forked_to / forked_by / forked_at. The new record is written and read back
+ * before the source is touched, so a crash between the two writes leaves a
+ * spare record, never a frozen source with no head.
+ *
+ * opts: { by, surface, session_id, cwd, name, activate }. activate defaults
+ * to true and repoints breadcrumbs/active.json at the new head.
+ *
+ * Returns { ok: true, id, record } or { ok: false, error }. Never throws.
+ */
+function forkBreadcrumb(sourceId, opts) {
+  try {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    const src = readBreadcrumb(sourceId);
+    if (!src) return { ok: false, error: 'no breadcrumb ' + String(sourceId || '') };
+    if (isFrozen(src)) {
+      return { ok: false, error: frozenNotice(src) + ' Fork the head, not a frozen ancestor.' };
+    }
+    if (!isOpen(src)) {
+      return { ok: false, error: 'breadcrumb ' + src.id + ' is ' + (src.status || 'closed') + ' - only a live head can be forked' };
+    }
+    const rem = remainingPlanned(src);
+    const open = openDecisions(src);
+    if (!rem.carried.length && !open.length) {
+      return { ok: false, error: 'breadcrumb ' + src.id + ' has no remaining steps and no unresolved decisions - complete it instead of forking' };
+    }
+
+    // Guaranteed-unique id: regenerate on collision with the source or an
+    // existing file, then append a discriminator suffix. A record must never
+    // end up forked_to itself.
+    let id = shortId('bc');
+    let tries = 0;
+    while ((id === src.id || fs.existsSync(resolvePath('breadcrumbs/' + safeName(id) + '.json'))) && tries < 20) {
+      tries += 1;
+      id = shortId('bc') + '-f' + tries;
+    }
+    if (id === src.id || fs.existsSync(resolvePath('breadcrumbs/' + safeName(id) + '.json'))) {
+      return { ok: false, error: 'could not allocate a unique id for the fork' };
+    }
+
+    const now = new Date().toISOString();
+    const decisions = open.map((d) => {
+      const copy = Object.assign({}, d);
+      const blocks = Array.isArray(d.blocks) ? d.blocks : [];
+      copy.blocks = blocks
+        .map((b) => (Object.prototype.hasOwnProperty.call(rem.map, b) ? rem.map[b] : null))
+        .filter((b) => b !== null);
+      return copy;
+    });
+
+    const fork = {
+      version: Number(src.version) || 1,
+      id: id,
+      name: typeof opts.name === 'string' && opts.name ? opts.name : (src.name || src.title || ''),
+      status: 'open',
+      session_id: typeof opts.session_id === 'string' ? opts.session_id : null,
+      surface: typeof opts.surface === 'string' && opts.surface ? opts.surface : (src.surface || ''),
+      cwd: typeof opts.cwd === 'string' && opts.cwd ? opts.cwd : (src.cwd || ''),
+      targets: Array.isArray(src.targets) ? src.targets.slice() : [],
+      created_at: now,
+      updated_at: now,
+      completed_at: null,
+      outcome: null,
+      planned_steps: rem.carried,
+      steps: [],
+      decisions: decisions,
+      forked_from: src.id,
+      tool_calls: 0
+    };
+
+    if (!writeJSON('breadcrumbs/' + safeName(id) + '.json', fork)) {
+      return { ok: false, error: 'could not write the fork record - source left untouched' };
+    }
+    const confirmed = readJSON('breadcrumbs/' + safeName(id) + '.json', null);
+    if (!confirmed || confirmed.id !== id) {
+      return { ok: false, error: 'fork record did not read back - source left untouched' };
+    }
+
+    src.forked_to = id;
+    src.forked_by = typeof opts.by === 'string' && opts.by ? opts.by
+      : (typeof opts.surface === 'string' ? opts.surface : '');
+    src.forked_at = now;
+    if (!saveBreadcrumb(src, false)) {
+      // Another session froze the source first: withdraw our record and
+      // report the head that beat us there.
+      try { fs.rmSync(resolvePath('breadcrumbs/' + safeName(id) + '.json'), { force: true }); } catch (e2) { /* ignore */ }
+      const again = readBreadcrumb(src.id);
+      return {
+        ok: false,
+        error: again && isFrozen(again) ? frozenNotice(again) : ('could not freeze ' + src.id)
+      };
+    }
+
+    if (opts.activate !== false) {
+      writeJSON('breadcrumbs/active.json', { version: 1, breadcrumb_id: id, updated_at: now });
+    }
+    appendEvent({ event: 'breadcrumb_fork', breadcrumb_id: id, forked_from: src.id, by: src.forked_by || '' });
+    return { ok: true, id: id, record: fork };
+  } catch (e) {
+    return { ok: false, error: 'fork failed: ' + (e && e.message ? e.message : 'unknown error') };
+  }
+}
+
+/**
+ * Completing a head closes its ancestry: walk forked_from and mark every
+ * still-open ancestor complete with completed_via = the head id, so an
+ * earlier session resumes into "finished elsewhere, here is the pointer"
+ * rather than a dangling operation. Returns the ids closed. Never throws.
+ */
+function propagateCompletion(headIdOrRecord) {
+  const closed = [];
+  try {
+    const head = (headIdOrRecord && typeof headIdOrRecord === 'object')
+      ? headIdOrRecord : readBreadcrumb(headIdOrRecord);
+    if (!head || !head.id) return closed;
+    const now = new Date().toISOString();
+    const seen = new Set([head.id]);
+    let cur = head;
+    while (cur && typeof cur.forked_from === 'string' && cur.forked_from
+      && !seen.has(cur.forked_from) && seen.size <= 100) {
+      seen.add(cur.forked_from);
+      const anc = readBreadcrumb(cur.forked_from);
+      if (!anc) break;
+      if (isOpen(anc)) {
+        anc.status = 'complete';
+        anc.completed_at = now;
+        anc.completed_via = head.id;
+        if (!anc.outcome) anc.outcome = 'completed via ' + head.id;
+        if (saveBreadcrumb(anc, true)) closed.push(anc.id);
+      }
+      cur = anc;
+    }
+    if (closed.length) {
+      appendEvent({ event: 'breadcrumb_chain_complete', head: head.id, closed: closed });
+    }
+  } catch (e) { /* fall through */ }
+  return closed;
+}
+
+/**
+ * Explicitly retire an incomplete chain with a recorded reason. Walks from
+ * the chain head back through forked_from and closes every record still open
+ * as aborted, with retired = true and the reason. This is the only sanctioned
+ * way to make an unfinished chain stop surfacing. Returns the ids retired.
+ */
+function retireChain(idOrRecord, reason, by) {
+  const retired = [];
+  try {
+    const start = (idOrRecord && typeof idOrRecord === 'object')
+      ? idOrRecord : readBreadcrumb(idOrRecord);
+    if (!start) return retired;
+    const now = new Date().toISOString();
+    const head = chainHead(start);
+    let cur = head.record || start;
+    const seen = new Set();
+    while (cur && cur.id && !seen.has(cur.id) && seen.size <= 100) {
+      seen.add(cur.id);
+      if (isOpen(cur)) {
+        cur.status = 'aborted';
+        cur.aborted_at = now;
+        cur.retired = true;
+        cur.retired_reason = String(reason == null ? '' : reason);
+        cur.retired_by = String(by == null ? '' : by);
+        if (!cur.outcome) cur.outcome = 'retired: ' + (cur.retired_reason || '(no reason recorded)');
+        if (saveBreadcrumb(cur, true)) retired.push(cur.id);
+      }
+      cur = (typeof cur.forked_from === 'string' && cur.forked_from) ? readBreadcrumb(cur.forked_from) : null;
+    }
+    if (retired.length) {
+      appendEvent({ event: 'breadcrumb_chain_retire', retired: retired, reason: String(reason == null ? '' : reason) });
+    }
+  } catch (e) { /* fall through */ }
+  return retired;
 }
 
 /* ----------------------------------------------------------------- session */
@@ -422,6 +758,7 @@ function arc() {
     last_breadcrumb_nudge_at: -1,
     warned_paths: [],
     auto_checkpoints: [],
+    frozen_warned_id: '',
     updated_at: ''
   };
   if (!a || typeof a !== 'object' || Array.isArray(a)) return base;
@@ -551,6 +888,17 @@ module.exports = {
   activeBreadcrumb: activeBreadcrumb,
   saveBreadcrumb: saveBreadcrumb,
   breadcrumbProgress: breadcrumbProgress,
+  isOpen: isOpen,
+  readBreadcrumb: readBreadcrumb,
+  isFrozen: isFrozen,
+  chainHead: chainHead,
+  frozenNotice: frozenNotice,
+  openDecisions: openDecisions,
+  blockedStepIndexes: blockedStepIndexes,
+  remainingPlanned: remainingPlanned,
+  forkBreadcrumb: forkBreadcrumb,
+  propagateCompletion: propagateCompletion,
+  retireChain: retireChain,
   sessionIndex: sessionIndex,
   sessionRecord: sessionRecord,
   recentSessions: recentSessions,

@@ -78,6 +78,12 @@ block - last session summary, the open breadcrumb and its last step, due reminde
 and self-state focus. Nothing to restore means no output at all rather than a block
 that says "nothing to restore".
 
+Fork-chain state is part of the restore block: a breadcrumb that was forked away is
+reported as FROZEN with the chain head named; open decisions are listed with what
+they wait on; and when the active pointer names a record another session finished
+or aborted through the chain, that pointer is surfaced ("completed via ...", or an
+adoptable aborted tail) instead of a dangling operation.
+
 The restore block is bounded. It summarizes; it never pastes a transcript.
 
 ---
@@ -140,7 +146,14 @@ enforcement layer is the harness's own permission system, not Autocache.
 - increments `calls_since_step` on the breadcrumb and `tool_calls` on the session
 - records a backup entry when the backup helper ran
 
-**Output:** none. This hook is silent by design; it is bookkeeping.
+**Output:** none in the normal case. This hook is silent by design; it is
+bookkeeping.
+
+A breadcrumb that has been forked away (`forked_to` set) is frozen: this hook
+never appends to it and never counts against it. It writes one stderr line naming
+the chain head - once per record, tracked in `state/arc.json` - so the returning
+session catches up instead of writing into a dead branch. The shared state layer
+refuses the write regardless, so even a bug here could not mutate a frozen record.
 
 Tool responses are not stored. Only metadata - which tool, which target, when.
 
@@ -156,7 +169,9 @@ Tool responses are not stored. Only metadata - which tool, which target, when.
 directory is a repository.
 
 **Writes:** a checkpoint under `checkpoints/` with `reason: "stop-hook"`, updates the
-session's `updated_at`, appends a `checkpoint_save` event.
+session's `updated_at`, appends a `checkpoint_save` event. The checkpoint's
+breadcrumb block carries the chain position (`forked_from`, `forked_to`) and the
+count of open decisions alongside the completed and remaining steps.
 
 **Output:** none.
 

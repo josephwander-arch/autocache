@@ -191,10 +191,12 @@ logged against it.
   "created_at": "2026-07-31T17:05:30.881Z",
   "updated_at": "2026-07-31T18:10:44.203Z",
   "completed_at": null,
+  "planned_steps": ["write state-format.md", "write the CI workflow", "fail-open job"],
   "steps": [
     { "n": 1, "at": "2026-07-31T17:20:00.000Z", "text": "spec read, ownership confirmed", "auto": false },
     { "n": 2, "at": "2026-07-31T17:44:10.000Z", "text": "Write docs/state-format.md", "auto": true, "tool": "Write" }
   ],
+  "decisions": [],
   "backups": [
     { "at": "2026-07-31T17:44:09.000Z", "source": "README.md", "backup": "README.md.20260731T174409.bak" }
   ],
@@ -207,9 +209,106 @@ logged against it.
 | `name` | string | Must declare component and mutable targets. Generic names defeat the purpose |
 | `status` | `"open"`, `"complete"`, `"aborted"` | Only one breadcrumb is open at a time per state root |
 | `targets` | string[] | Files or directories the arc is expected to mutate |
-| `steps[]` | object[] | `auto: true` entries came from `PostToolUse`, `false` entries were logged explicitly |
+| `planned_steps[]` | string[] | The still-open work, in order. **Growable**: work discovered mid-arc that is still open when the agent's output ends is appended here. A planned step counts as done once a logged step covers its text |
+| `steps[]` | object[] | The log of what happened. `auto: true` entries came from `PostToolUse`, `false` entries were logged explicitly |
+| `decisions[]` | object[] | Questions the arc could not settle by itself; see below |
 | `backups[]` | object[] | Recorded by the backup helper before an overwrite |
 | `calls_since_step` | integer | Drives the "log a step" nudge |
+| `forked_from` | string, optional | Id of the record this one was forked from; see the fork chain below |
+| `forked_to`, `forked_by`, `forked_at` | string, optional | Set when this record is forked away. A non-null `forked_to` means the record is **frozen** |
+| `completed_via` | string, optional | Set on an ancestor when a later chain head completed the work |
+| `retired`, `retired_reason`, `retired_by` | optional | Set when an incomplete chain was explicitly retired with a recorded reason |
+
+All of the fork-chain fields are optional. A record written before they existed has
+none of them and behaves exactly as it always did.
+
+### Decisions
+
+A decision is a question with 2-3 defensible answers that the arc recorded instead
+of guessing. It lives on the breadcrumb so the next session inherits both the
+question and, once resolved, the answer with its reasoning.
+
+```json
+{
+  "id": "dec-1-7f2a",
+  "question": "malformed rows: throw or write a .rejects sidecar?",
+  "options": ["throw on first bad row", "write a .rejects sidecar"],
+  "lean": "write a .rejects sidecar",
+  "waits_on": "user",
+  "blocks": [2],
+  "status": "open",
+  "raised_at": "2026-07-31T17:50:00.000Z",
+  "raised_by": "claude-code",
+  "chosen": null,
+  "decided_by": null,
+  "basis": null,
+  "decided_at": null
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `options` | 2-3 candidate answers. Two minimum - one option is not a decision |
+| `lean` | The recorder's preferred option, or null. A lean is advice for the resolver, not a resolution |
+| `waits_on` | `"user"` - only the user's answer resolves it. `"any_informed_session"` - any agent with the full recorded picture may resolve it |
+| `blocks` | Indexes into `planned_steps` that must not be worked until this resolves. Steps not listed proceed freely |
+| `status` | `"open"` or `"resolved"` |
+| `chosen`, `decided_by`, `decided_at` | The resolution: which option, who decided, when |
+| `basis` | What justified the call - required when an agent resolves an `any_informed_session` decision |
+
+### The fork chain
+
+Cross-session takeover is recorded as a chain of breadcrumb records with **exactly
+one live head**. Forking a record writes a new breadcrumb carrying the remaining
+`planned_steps` and every unresolved decision (with `blocks` reindexed against the
+new, shorter list), sets `forked_from` on the new record, and then freezes the
+source by setting `forked_to`, `forked_by`, and `forked_at`.
+
+A frozen record - non-null `forked_to` - rejects every write. The rejection names
+the chain head so a returning session catches up instead of writing into a dead
+branch. Taking work back is a fork of the current head; the chain grows forward and
+every hop stays attributed. Fork ids are guaranteed unique against the source (a
+discriminator suffix is appended on collision), so a record can never end up
+`forked_to` itself.
+
+A frozen ancestor and the head that superseded it:
+
+```json
+{
+  "version": 1,
+  "id": "bc_20260801T090000_a1b2",
+  "name": "csv importer | targets: src/import/csv.js",
+  "status": "open",
+  "planned_steps": ["wire parser", "reject sidecar", "cli hook"],
+  "steps": [ { "at": "2026-08-01T09:20:00.000Z", "text": "schema written", "source": "command" } ],
+  "forked_to": "bc_20260801T113005_c3d4",
+  "forked_by": "claude-code ses_20260801T112900_9e1f",
+  "forked_at": "2026-08-01T11:30:05.112Z"
+}
+```
+
+```json
+{
+  "version": 1,
+  "id": "bc_20260801T113005_c3d4",
+  "name": "csv importer | targets: src/import/csv.js",
+  "status": "open",
+  "planned_steps": ["wire parser", "reject sidecar", "cli hook"],
+  "steps": [],
+  "decisions": [],
+  "forked_from": "bc_20260801T090000_a1b2",
+  "created_at": "2026-08-01T11:30:05.112Z"
+}
+```
+
+Completing the head walks `forked_from` back and marks every still-open ancestor
+`"status": "complete"` with `completed_via` set to the head id - each earlier
+session resumes into "finished elsewhere, here is the pointer" rather than a
+dangling operation. Aborting the head propagates nothing: ancestors stay frozen
+pointing forward, and the aborted tail surfaces as adoptable work. An incomplete
+chain is never silently pruned; it keeps surfacing until it is completed through
+the chain or explicitly retired, which closes every open record with `retired:
+true` and the recorded reason.
 
 ## breadcrumbs/active.json
 
@@ -355,6 +454,7 @@ makes people distrust a local-state claim.
 | `last_breadcrumb_nudge_at` | integer | Tool-call count at the last nudge; `-1` means never. Prevents repeat nagging |
 | `warned_paths` | string[] | Paths already warned about, so the same file is not flagged twice |
 | `auto_checkpoints` | string[] | Checkpoints the `Stop` hook created, as opposed to `/checkpoint` |
+| `frozen_warned_id` | string | Breadcrumb id already warned about as frozen, so `PostToolUse` says it once |
 | `updated_at` | string | ISO 8601 UTC, set on every write |
 
 Deleting this file is safe. The next `SessionStart` rebuilds it from defaults; you lose the

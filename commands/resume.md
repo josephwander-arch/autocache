@@ -62,22 +62,46 @@ line('');
 line('== OPEN BREADCRUMB ==');
 const act = rd('breadcrumbs', 'active.json');
 const bid = act && (act.breadcrumb_id || act.id || null);
-const bc = bid ? (rd('breadcrumbs', bid + '.json') || (act.steps ? act : null)) : null;
+let bc = bid ? (rd('breadcrumbs', bid + '.json') || (act.steps ? act : null)) : null;
+if (bc && bc.forked_to) {
+  // The pointer names a frozen record: the work moved. Follow the chain to
+  // its head and report every hop - never write to a frozen record.
+  line('  pointer ' + (bc.id || bid) + ' is FROZEN - following the fork chain:');
+  const seen = {}; let hops = 0;
+  while (bc && bc.forked_to && !seen[bc.id] && hops < 50) {
+    seen[bc.id] = 1; hops += 1;
+    line('    ' + bc.id + ' -> forked to ' + bc.forked_to + (bc.forked_by ? ' by ' + bc.forked_by : '') + (bc.forked_at ? ' at ' + bc.forked_at : ''));
+    const nx = rd('breadcrumbs', bc.forked_to + '.json');
+    if (!nx) { line('    ' + bc.forked_to + ' (record missing)'); bc = null; break; }
+    bc = nx;
+  }
+  if (bc) line('  chain head: ' + bc.id + ' [' + (bc.status || 'open') + ']');
+}
 if (!bc) { line('  none open'); }
 else {
   line('  id      : ' + (bc.id || bid));
   line('  name    : ' + (bc.name || bc.title || '(unnamed)'));
   line('  status  : ' + (bc.status || 'open') + '   started ' + (bc.created_at || bc.started_at || '?'));
+  if (bc.completed_via) line('  finished elsewhere - completed via ' + bc.completed_via);
+  if (bc.retired) line('  retired : ' + (bc.retired_reason || '(no reason recorded)'));
   const t = arr(bc.targets ? { items: bc.targets } : null);
   if (t.length) line('  targets : ' + t.join(', '));
   const planned = arr(bc.planned_steps ? { items: bc.planned_steps } : null);
   const steps = arr(bc.steps ? { items: bc.steps } : null);
   if (steps.length) { line('  done so far (' + steps.length + (FULL ? '' : ', last 6') + '):'); tail(steps, 6).forEach((s, i) => line('    ' + (i + 1) + '. ' + (s.text || s.note || JSON.stringify(s)))); }
   else line('  no steps logged yet');
+  const openDecs = (bc.decisions || []).filter(d => d && d.status !== 'resolved' && !d.chosen);
+  const blocked = {};
+  openDecs.forEach(d => (d.blocks || []).forEach(i => { blocked[i] = d; }));
   if (planned.length) {
     const doneTexts = steps.map(s => String(s.text || '').toLowerCase());
-    const open = planned.filter(p => !doneTexts.some(d => d.includes(String(p).toLowerCase().slice(0, 24))));
-    if (open.length) { line('  still planned:'); open.forEach(p => line('    - ' + p)); }
+    const open = [];
+    planned.forEach((p, i) => { if (!doneTexts.some(d => d.includes(String(p).toLowerCase().slice(0, 24)))) open.push({ i: i, p: p }); });
+    if (open.length) { line('  still planned:'); open.forEach(x => line('    ' + x.i + '. ' + x.p + (blocked[x.i] ? '   [BLOCKED by ' + blocked[x.i].id + ']' : ''))); }
+  }
+  if (openDecs.length) {
+    line('  awaiting decision:');
+    openDecs.forEach(d => line('    ' + d.id + ': ' + d.question + ' | options: ' + (d.options || []).join(' / ') + (d.lean ? ' | lean: ' + d.lean : '') + ' | waits on ' + (d.waits_on || 'user')));
   }
 }
 
@@ -156,3 +180,19 @@ Run it with `full` and/or a session id appended when the arguments call for it:
    them. The state describes the work; it is not a substitute for the current code.
 5. Do not claim anything the state does not say. If the previous session ended without
    a summary, report that the session ended without one.
+6. If the script reported a **fork chain**, act on the head's status, never on the
+   frozen pointer:
+   - head **open** - the work is live elsewhere. Catch up by reading the chain, then
+     work read-only, ask for a pass, or take over by forking the head. Apply the
+     takeover eligibility ladder in the `autocache-handoff` skill before forking, and
+     never write to a frozen record - every write is rejected naming the head.
+   - head **complete** (or the pointer carries `completed_via`) - the work was
+     finished elsewhere. Report the pointer in one line and stop; there is nothing to
+     resume.
+   - head **aborted** and not retired - the chain tail is adoptable work. Offer
+     `/breadcrumb adopt <tail-id>` to continue it or `/breadcrumb retire <tail-id>
+     <reason>` to close the chain out. Never just drop it: an incomplete chain keeps
+     surfacing until it is completed through the chain or retired with a reason.
+7. A step marked BLOCKED waits on its decision. If it `waits_on: "user"`, put the
+   question, the options, and any recorded lean in front of the user; do not answer
+   it yourself. Unblocked steps are fair game meanwhile.

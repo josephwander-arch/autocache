@@ -11,7 +11,57 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Fork-chain takeover.** Cross-session and cross-agent handoff of an open
+  breadcrumb is now a chain of records with exactly one live head. `/breadcrumb
+  fork <id>` writes a new breadcrumb carrying the remaining steps and unresolved
+  decisions (block indexes reindexed), then freezes the source with `forked_to`,
+  `forked_by`, `forked_at`. A frozen record rejects every write - the rejection
+  names the chain head so a returning session catches up instead of corrupting a
+  dead branch. Take-back is a fork of the current head, so the chain grows forward
+  with every hop attributed. Fork ids are guaranteed unique against the source; a
+  record can never end up forked to itself.
+- **Completion propagation.** Completing a chain head marks every still-open
+  ancestor `complete` with `completed_via` set to the head id, so earlier sessions
+  resume into "finished elsewhere, here is the pointer" rather than a dangling
+  operation. Aborting a head propagates nothing: ancestors stay frozen pointing
+  forward and the tail surfaces as adoptable work. An incomplete chain keeps
+  surfacing until it is completed through the chain or explicitly retired with a
+  recorded reason (`/breadcrumb retire <id> <reason>`).
+- **Growable pending steps.** `planned_steps` grows mid-operation via `/breadcrumb
+  add`, with a mechanical boundary: work discovered and finished before the
+  agent's current output ends needs no entry; work still open when the output ends
+  must be appended.
+- **Awaiting-decision entries.** Breadcrumbs carry decisions - question, 2-3
+  options, optional lean, `waits_on` (`"user"` or `"any_informed_session"`), and
+  the `planned_steps` indexes they block. Blocked steps are refused until the
+  decision resolves; unblocked steps proceed freely. Resolution records `chosen`,
+  `decided_by`, `basis`, and `decided_at`. A `waits_on: "user"` decision resolves
+  only with the user's actual answer.
+- **Takeover eligibility ladder** in the `autocache-handoff` skill (referenced
+  from `autocache-resume` and `/breadcrumb`): fork an idle head on demonstrated
+  inactivity past a threshold, an explicit pass, or the user's direction; when
+  activity cannot be determined, name the holding session, state the corruption
+  risk, wait, re-check, and proceed only on the user's affirmation given after
+  the risk statement. Cross-machine forks first compare the record file's mtime
+  against its recorded last activity to detect an in-progress sync.
+- **Hook surfacing.** `SessionStart` reports frozen breadcrumbs with their chain
+  head, open decisions, finished-elsewhere pointers, and adoptable aborted tails.
+  `PostToolUse` never steps or counts against a frozen record and emits a single
+  advisory line naming the head. `Stop` checkpoints carry the chain position and
+  the open-decision count.
+
+### Changed
+
+- `planned_steps` was already written by `/breadcrumb start` but was invisible to
+  the hooks; the restore block and `Stop` checkpoints now count unfinished planned
+  steps as remaining work. Log-style step entries (those carrying a timestamp or a
+  source) are now classed as completed rather than remaining in the restore block.
+
+State-file compatibility is preserved: every new breadcrumb field is optional, a
+directory written by 0.1.0 reads unchanged, and records written with the new fields
+degrade gracefully under 0.1.0 readers (a frozen record simply shows as open).
 
 ## [0.1.0] - 2026-07-31
 

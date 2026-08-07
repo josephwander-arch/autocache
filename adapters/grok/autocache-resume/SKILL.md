@@ -41,7 +41,11 @@ Get-Content (Join-Path $root 'breadcrumbs/active.json'), (Join-Path $root 'sessi
 
 1. **The open arc.** Title, when it started, the last logged step, and how long it
    has been sitting. If `active.json` is null or missing, say there is no open arc.
-   Do not manufacture one.
+   Do not manufacture one. If the record carries `forked_to`, it is frozen - the
+   work moved to the record it names. Narrate the chain (who forked it, when, and
+   the head's status), and if an ancestor carries `completed_via`, report the work
+   as finished elsewhere via that head. Never present a frozen record as resumable
+   in place.
 2. **The gap.** What the last step says was done, versus what the arc title says the
    whole job is. That difference is the resume point.
 3. **The next action.** One concrete thing, naming the file or component from the

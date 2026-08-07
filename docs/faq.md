@@ -63,6 +63,12 @@ Not in v1. State is local. You can point `AUTOCACHE_HOME` at a directory you syn
 yourself, but nothing about concurrent writes from two machines is designed for or
 tested, so treat that as unsupported.
 
+What the fork chain adds for a self-synced directory is ownership discipline, not
+sync: an operation has exactly one live head, a forked-away record rejects writes
+naming the head, and the takeover ladder in the `autocache-handoff` skill treats a
+detectable in-progress sync as a reason to wait. That makes a collision detectable
+and attributable; it does not make concurrent writes safe.
+
 ### Can two sessions run at once?
 
 Yes, on one machine. Each session gets its own file. The one shared piece of state is

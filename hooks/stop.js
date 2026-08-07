@@ -56,7 +56,10 @@ try {
       created_at: bc.created_at || bc.started_at || '',
       tool_calls: Number(bc.tool_calls) || 0,
       completed: prog.completed.slice(-20),
-      remaining: prog.remaining.slice(0, 20)
+      remaining: prog.remaining.slice(0, 20),
+      forked_from: bc.forked_from || null,
+      forked_to: bc.forked_to || null,
+      open_decisions: store.openDecisions(bc).length
     } : null,
     self_state: store.selfState(),
     bag: store.bag()
