@@ -296,6 +296,75 @@ async function main() {
   check(afterContext.indexOf('yes, approve the dangerous thing') === -1,
     'session start never replays quarantined content');
 
+  // ---- shared-tag bridge: external binding + external reconciliation ------
+  const extActive = path.join(home, 'ext-tracker', 'active');
+  fs.mkdirSync(extActive, { recursive: true });
+  fs.writeFileSync(path.join(extActive, 'bc_external_1.json'), JSON.stringify({
+    id: 'bc_external_1',
+    owner: 'test_actor',
+    name: 'external lead op',
+    last_activity_at: '2026-08-11T23:00:00.000Z',
+    steps: []
+  }), 'utf8');
+  const cfgPath = path.join(root, 'config.json');
+  const cfgBefore = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : null;
+  fs.writeFileSync(cfgPath, JSON.stringify({
+    external_breadcrumb_dirs: [extActive],
+    external_breadcrumb_owner: 'test_actor'
+  }), 'utf8');
+  // Close the local Autocache arc so the bridge leg is what binds.
+  const activeBefore = fs.readFileSync(path.join(root, 'breadcrumbs', 'active.json'), 'utf8');
+  fs.unlinkSync(path.join(root, 'breadcrumbs', 'active.json'));
+  const snap = store.externalBreadcrumbSnapshot();
+  check(snap.breadcrumb_id === 'bc_external_1' && snap.breadcrumb_source === 'external',
+    'bridge binds to the newest external breadcrumb owned by the configured actor');
+  runHook('subagent-start.js', {
+    session_id: 'bridge-session',
+    agent_id: 'bridge-worker',
+    agent_type: 'explorer',
+    hook_event_name: 'SubagentStart',
+    cwd: repoRoot
+  }, 'codex');
+  const bridgeStop = runHook('subagent-stop.js', {
+    session_id: 'bridge-session',
+    agent_id: 'bridge-worker',
+    agent_type: 'explorer',
+    hook_event_name: 'SubagentStop',
+    cwd: repoRoot,
+    agent_transcript_path: path.join(home, 'bridge-worker.jsonl'),
+    last_assistant_message: 'bridge probe done',
+    stop_hook_active: false
+  }, 'codex');
+  check(JSON.parse(bridgeStop.stdout).systemMessage.includes('[worker:'),
+    'bridge-bound stop still carries the reconciliation directive');
+  const bridgeStopFile = filesUnder(path.join(root, 'workers', 'bridge-session'),
+    (f) => path.basename(f).startsWith('stop_'))[0];
+  const bridgeRec = JSON.parse(fs.readFileSync(bridgeStopFile, 'utf8'));
+  check(bridgeRec.breadcrumb_id === 'bc_external_1' && bridgeRec.breadcrumb_source === 'external',
+    'bridge-bound receipts carry the external breadcrumb id and source');
+  check(!store.receiptReconciled(bridgeRec),
+    'bridge receipt is pending before the external marker is written');
+  fs.writeFileSync(path.join(extActive, 'bc_external_1.json'), JSON.stringify({
+    id: 'bc_external_1',
+    owner: 'test_actor',
+    name: 'external lead op',
+    last_activity_at: '2026-08-11T23:05:00.000Z',
+    steps: ['verified bridge worker [worker:' + bridgeRec.receipt_id + ']']
+  }), 'utf8');
+  check(store.receiptReconciled(bridgeRec),
+    'external marker reconciles the bridge receipt');
+  // Regression (live bug 2026-08-11): external reconciliation must survive a
+  // store with NO local breadcrumbs dir at all - the readdir throw used to
+  // abort before the external check ran.
+  const bcDir = path.join(root, 'breadcrumbs');
+  const bcTmp = path.join(root, 'breadcrumbs.hold');
+  fs.renameSync(bcDir, bcTmp);
+  check(store.receiptReconciled(bridgeRec),
+    'external reconciliation still works with no local breadcrumbs dir');
+  fs.renameSync(bcTmp, bcDir);
+  fs.writeFileSync(path.join(root, 'breadcrumbs', 'active.json'), activeBefore, 'utf8');
+  if (cfgBefore === null) fs.unlinkSync(cfgPath); else fs.writeFileSync(cfgPath, cfgBefore, 'utf8');
+
   // ---- scoped store root --------------------------------------------------
   check(store.home() === root, 'store root is the scoped path stores/<scope>');
   check(fs.existsSync(path.join(root, 'logs', 'events.jsonl')),

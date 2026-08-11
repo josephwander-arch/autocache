@@ -11,6 +11,20 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-11
+
+### Fixed
+
+- External reconciliation now survives a store with no local `breadcrumbs/`
+  dir: the local-fallback scan's `readdirSync` throw used to abort
+  `receiptReconciled` before the external-marker check ran, so a marker
+  written in the external tracker never cleared the receipt. Found by live
+  runtime probing minutes after 0.3.0 shipped; the repo gates were green
+  because every test store had a local breadcrumbs dir. Regression test added.
+- `breadcrumbSnapshot` falls through to the shared-tag bridge whenever there
+  is no usable local tag - a junk `active.json` without an id no longer
+  produces a null local binding instead of an external one.
+
 ## [0.3.0] - 2026-08-11
 
 ### Added

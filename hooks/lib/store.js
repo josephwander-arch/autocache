@@ -746,13 +746,14 @@ function breadcrumbSnapshot() {
   const out = { breadcrumb_id: null, chain_head_id: null, breadcrumb_source: null };
   try {
     const bc = activeBreadcrumb();
-    if (bc) {
-      out.breadcrumb_id = bc.id || null;
+    if (bc && bc.id) {
+      out.breadcrumb_id = bc.id;
       const head = chainHead(bc);
       out.chain_head_id = head && head.id ? head.id : out.breadcrumb_id;
       out.breadcrumb_source = 'autocache';
       return out;
     }
+    // No usable local tag (no arc, or a record without an id): bridge.
     return externalBreadcrumbSnapshot();
   } catch (e) { /* fall through */ }
   return out;
@@ -1323,21 +1324,25 @@ function receiptReconciled(rec) {
 
     // A worker may start before a breadcrumb opens. Bounded fallback: search
     // recent breadcrumb records for the exact marker rather than losing the
-    // receipt or treating an unrelated summary as acknowledgement.
-    const dir = resolvePath('breadcrumbs');
-    const files = fs.readdirSync(dir)
-      .filter((name) => name.endsWith('.json') && name !== 'active.json')
-      .map((name) => {
-        let mtime = 0;
-        try { mtime = fs.statSync(path.join(dir, name)).mtimeMs; } catch (e) { /* ignore */ }
-        return { name: name, mtime: mtime };
-      })
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, 200);
-    for (const file of files) {
-      const bc = readJSON('breadcrumbs/' + file.name, null);
-      if (breadcrumbRecordHasMarker(bc, marker)) return true;
-    }
+    // receipt or treating an unrelated summary as acknowledgement. Guarded in
+    // its own try: a store with no local breadcrumbs dir (bridge-only use)
+    // must still fall through to the external check below, not abort.
+    try {
+      const dir = resolvePath('breadcrumbs');
+      const files = fs.readdirSync(dir)
+        .filter((name) => name.endsWith('.json') && name !== 'active.json')
+        .map((name) => {
+          let mtime = 0;
+          try { mtime = fs.statSync(path.join(dir, name)).mtimeMs; } catch (e) { /* ignore */ }
+          return { name: name, mtime: mtime };
+        })
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, 200);
+      for (const file of files) {
+        const bc = readJSON('breadcrumbs/' + file.name, null);
+        if (breadcrumbRecordHasMarker(bc, marker)) return true;
+      }
+    } catch (e) { /* no local records - external check still runs */ }
     // Shared-tag bridge: the lead may have reconciled in the external
     // tracker's records rather than a local Autocache breadcrumb.
     if (externalRecordHasMarker(marker)) return true;
