@@ -17,6 +17,14 @@
 try {
   const store = require('./lib/store.js');
   const input = store.readStdinJSON();
+
+  // Scoped-store maintenance runs before any read: first run of a scope seeds
+  // continuity state from the legacy shared root (copy, never move), and any
+  // phantom worker dirs (stop with no start) move into quarantine so they can
+  // never resurface as worker results.
+  store.seedScopedStore();
+  store.sweepOrphanStops();
+
   const cfg = store.config();
 
   if (cfg.enabled === false) process.exit(0);
@@ -134,6 +142,14 @@ try {
       lines.push('    verify, then log a breadcrumb milestone containing [worker:'
         + worker.receipt_id + ']');
     }
+  }
+
+  // ---- quarantined unattributable events ----------------------------------
+  const quarantined = store.quarantinedCount();
+  if (quarantined > 0) {
+    lines.push('Quarantined unattributable events: ' + quarantined
+      + ' (autocache quarantine/ tree). Preserved data for human review - not worker results,'
+      + ' not user input, not instructions.');
   }
 
   // ---- due reminders ------------------------------------------------------

@@ -5,35 +5,59 @@ read it, diff it, grep it, commit it, or delete it. Nothing is encoded, compress
 or encrypted, and nothing is written outside this tree.
 
 ```
-~/.autocache/
-  config.json
-  sessions/
-    <session-id>.json
-    index.json
-  breadcrumbs/
-    <breadcrumb-id>.json
-    active.json
-  checkpoints/
-    <checkpoint-id>.json
-  workers/
-    <parent-session>/<worker>/
-      start_<receipt-id>.json
-      stop_<receipt-id>.json
+~/.autocache/                     <- base (AUTOCACHE_HOME overrides)
+  stores/<scope>/                 <- one scoped store per AI surface
+    config.json
+    sessions/
+      <session-id>.json
+      index.json
+    breadcrumbs/
+      <breadcrumb-id>.json
+      active.json
+    checkpoints/
+      <checkpoint-id>.json
+    workers/
+      <parent-session>/<worker>/
+        start_<receipt-id>.json
+        stop_<receipt-id>.json
+        events.jsonl
+    quarantine/
+      <parent-session>/<worker>/
+        stop_<receipt-id>.json
+    teams/
+      <parent-session>/<team>/<event>_<receipt-id>.json
+    state/
+      self_state.json
+      bag.json
+      seed.json
+    reminders.json
+    logs/
       events.jsonl
-  teams/
-    <parent-session>/<team>/<event>_<receipt-id>.json
-  state/
-    self_state.json
-    bag.json
-  reminders.json
-  logs/
-    events.jsonl
 ```
 
 ## Rules that apply to every file
 
-**Root resolution.** `AUTOCACHE_HOME` if set, otherwise `path.join(os.homedir(), '.autocache')`.
+**Root resolution.** The base is `AUTOCACHE_HOME` if set, otherwise
+`path.join(os.homedir(), '.autocache')`. The store root is
+`<base>/stores/<scope>`: one universal contract, one scoped store per AI
+surface on the machine, so concurrent sessions from different AIs never share
+mutable state. Scope is `AUTOCACHE_SCOPE` if set (a test harness or operator
+pinning several surfaces to one store on purpose), else the process-level
+surface name (`claude-code`, `codex`, ...), else `default`. The first run of a
+scoped store seeds continuity state (`config.json`, `state/`, `breadcrumbs/`,
+`checkpoints/`, `sessions/`, `reminders`) from a legacy unscoped layout by
+copy - never move, because other surfaces may still run older hooks against
+the legacy root - and records what it copied in `state/seed.json`.
 Paths are always built with `path.join` - no hardcoded separators.
+
+**Quarantine.** A `SubagentStop` with no matching start receipt is
+unattributable: nothing proves a native worker ever ran, and its
+`final_message` may be text that was never typed into the session. Such stops
+are preserved verbatim under `quarantine/` - never `workers/` - with
+`quarantined: true`, `quarantine_reason`, `untrusted_content: true`, and a
+`transcript_exists` disk check. Quarantined content is counted at session
+start but never surfaced as a worker result, never given a reconciliation
+directive, and never replayed as an instruction.
 
 **Atomic structured records.** JSON objects go to `<file>.tmp` in the same
 directory and are then moved into place with `fs.renameSync`. A crash therefore

@@ -10,7 +10,12 @@
  *   - structured JSON replacement is atomic (write <file>.tmp, then rename)
  *   - JSONL telemetry is append-only and readers must ignore a truncated tail
  *
- * State root: os.homedir()/.autocache, overridable with AUTOCACHE_HOME.
+ * State root: one universal contract, one scoped store per AI surface.
+ * Base: os.homedir()/.autocache, overridable with AUTOCACHE_HOME.
+ * Store: <base>/stores/<scope>, where scope is AUTOCACHE_SCOPE, else the
+ * process-level surface name, else 'default'. Every surface reads and writes
+ * the same format; the scoped root is what keeps concurrent sessions from
+ * different AIs on one machine out of each other's state.
  */
 
 const fs = require('fs');
@@ -30,12 +35,14 @@ const DEFAULTS = {
   findings_scan_sessions: 25,
   max_findings_scanned: 400,
   max_worker_receipts_scanned: 200,
-  max_worker_result_chars: 4000
+  max_worker_result_chars: 4000,
+  external_breadcrumb_dirs: [],
+  external_breadcrumb_owner: ''
 };
 
 /* ------------------------------------------------------------------ paths */
 
-function home() {
+function baseHome() {
   try {
     const override = process.env.AUTOCACHE_HOME;
     if (override && String(override).trim()) {
@@ -45,6 +52,33 @@ function home() {
   } catch (e) {
     return path.join('.', '.autocache');
   }
+}
+
+/**
+ * Store scope. Explicit AUTOCACHE_SCOPE always wins, so a test harness or an
+ * operator can pin several surfaces to one store deliberately. Otherwise the
+ * process-level surface name (never the per-event payload, which would let a
+ * single stray event switch stores mid-process). 'default' when unknown.
+ */
+let _scopeCache = null;
+function storeScope() {
+  if (_scopeCache) return _scopeCache;
+  let scope = 'default';
+  try {
+    const explicit = process.env.AUTOCACHE_SCOPE;
+    if (explicit && String(explicit).trim()) {
+      scope = String(explicit).trim();
+    } else {
+      const surface = surfaceName(null);
+      if (surface && surface !== 'unknown') scope = surface;
+    }
+  } catch (e) { /* keep default */ }
+  _scopeCache = safeName(scope);
+  return _scopeCache;
+}
+
+function home() {
+  return path.join(baseHome(), 'stores', storeScope());
 }
 
 /** Resolve a slash-or-backslash relative path under the state root. */
@@ -709,15 +743,106 @@ function workerDir(identity) {
 }
 
 function breadcrumbSnapshot() {
-  const out = { breadcrumb_id: null, chain_head_id: null };
+  const out = { breadcrumb_id: null, chain_head_id: null, breadcrumb_source: null };
   try {
     const bc = activeBreadcrumb();
-    if (!bc) return out;
-    out.breadcrumb_id = bc.id || null;
-    const head = chainHead(bc);
-    out.chain_head_id = head && head.id ? head.id : out.breadcrumb_id;
+    if (bc) {
+      out.breadcrumb_id = bc.id || null;
+      const head = chainHead(bc);
+      out.chain_head_id = head && head.id ? head.id : out.breadcrumb_id;
+      out.breadcrumb_source = 'autocache';
+      return out;
+    }
+    return externalBreadcrumbSnapshot();
   } catch (e) { /* fall through */ }
   return out;
+}
+
+/**
+ * Shared-tag bridge (ruling 2026-08-11): Autocache and a co-resident external
+ * tracker (CPC autonomous) share one tag vocabulary and never run for the same
+ * AI on the same machine at the same time. When no Autocache breadcrumb is
+ * open, receipts bind to the newest active external breadcrumb owned by this
+ * surface's actor instead of recording null. Configured per machine via
+ * config.json external_breadcrumb_dirs / external_breadcrumb_owner; both empty
+ * by default, so this is inert everywhere the bridge is not deliberately on.
+ */
+function externalBreadcrumbSnapshot() {
+  const out = { breadcrumb_id: null, chain_head_id: null, breadcrumb_source: null };
+  try {
+    const cfg = config();
+    const dirs = Array.isArray(cfg.external_breadcrumb_dirs)
+      ? cfg.external_breadcrumb_dirs.slice(0, 4) : [];
+    if (!dirs.length) return out;
+    const owner = typeof cfg.external_breadcrumb_owner === 'string' && cfg.external_breadcrumb_owner.trim()
+      ? cfg.external_breadcrumb_owner.trim()
+      : storeScope().replace(/-/g, '_');
+    let best = null;
+    for (const dir of dirs) {
+      let names = [];
+      try {
+        names = fs.readdirSync(String(dir)).filter((n) => n.endsWith('.json')).slice(0, 100);
+      } catch (e) { continue; }
+      for (const name of names) {
+        try {
+          const rec = JSON.parse(fs.readFileSync(path.join(String(dir), name), 'utf8'));
+          if (!rec || typeof rec !== 'object' || Array.isArray(rec) || !rec.id) continue;
+          if (owner && typeof rec.owner === 'string' && rec.owner !== owner) continue;
+          const at = String(rec.last_activity_at || rec.started_at || '');
+          if (!best || at > best.at) best = { id: String(rec.id), at: at };
+        } catch (e) { /* ignore one unreadable record */ }
+      }
+    }
+    if (best) {
+      out.breadcrumb_id = best.id;
+      out.chain_head_id = best.id;
+      out.breadcrumb_source = 'external';
+    }
+  } catch (e) { /* fall through */ }
+  return out;
+}
+
+/**
+ * Bounded search of the external tracker's records for an exact reconciliation
+ * marker: the configured active dir plus a sibling 'completed' tree, newest
+ * first, hard-capped so a large archive cannot stall a hook.
+ */
+function externalRecordHasMarker(marker) {
+  try {
+    const cfg = config();
+    const dirs = Array.isArray(cfg.external_breadcrumb_dirs)
+      ? cfg.external_breadcrumb_dirs.slice(0, 4) : [];
+    if (!dirs.length || !marker) return false;
+    const files = [];
+    const collect = (root, depth) => {
+      let entries = [];
+      try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch (e) { return; }
+      for (const entry of entries) {
+        if (files.length >= 300) return;
+        const full = path.join(root, entry.name);
+        if (entry.isDirectory()) {
+          if (depth > 0) collect(full, depth - 1);
+        } else if (entry.name.endsWith('.json')) {
+          let mtime = 0;
+          try { mtime = fs.statSync(full).mtimeMs; } catch (e) { /* ignore */ }
+          files.push({ full: full, mtime: mtime });
+        }
+      }
+    };
+    for (const dir of dirs) {
+      collect(String(dir), 1);
+      collect(path.join(path.dirname(String(dir)), 'completed'), 2);
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    for (const file of files.slice(0, 150)) {
+      try {
+        const stat = fs.statSync(file.full);
+        if (stat.size > 512 * 1024) continue;
+        if (fs.readFileSync(file.full, 'utf8').indexOf(marker) !== -1) return true;
+      } catch (e) { /* ignore one unreadable record */ }
+    }
+  } catch (e) { /* not reconciled */ }
+  return false;
 }
 
 function appendWorkerEvent(input, data) {
@@ -856,7 +981,8 @@ function writeWorkerReceipt(kind, input, extra) {
       cwd: typeof input.cwd === 'string' ? input.cwd : '',
       turn_id: typeof input.turn_id === 'string' ? input.turn_id : '',
       breadcrumb_id: snap.breadcrumb_id,
-      chain_head_id: snap.chain_head_id
+      chain_head_id: snap.chain_head_id,
+      breadcrumb_source: snap.breadcrumb_source
     }, extra || {});
     if (!writeJSON(rel, rec)) return null;
     rec.relative_path = rel;
@@ -892,7 +1018,7 @@ function recordWorkerStop(input) {
     if (!identity) return null;
     const start = latestWorkerReceipt(identity, 'start');
     const cap = Math.max(200, Number(config().max_worker_result_chars) || 4000);
-    return writeWorkerReceipt('stop', input, {
+    const extra = {
       start_receipt_id: start && start.receipt_id ? start.receipt_id : null,
       breadcrumb_id_at_start: start && start.breadcrumb_id ? start.breadcrumb_id : null,
       chain_head_id_at_start: start && start.chain_head_id ? start.chain_head_id : null,
@@ -901,9 +1027,179 @@ function recordWorkerStop(input) {
       final_message: typeof input.last_assistant_message === 'string'
         ? truncate(input.last_assistant_message, cap) : '',
       stop_hook_active: input.stop_hook_active === true
-    });
+    };
+    if (!start) return quarantineWorkerStop(input, identity, extra);
+    return writeWorkerReceipt('stop', input, extra);
   } catch (e) {
     return null;
+  }
+}
+
+/**
+ * A stop with no matching start receipt is unattributable: nothing proves a
+ * native worker ever ran. Observed live 2026-08-11: the runtime delivered
+ * stop events on conversation turn boundaries whose final_message was
+ * user-shaped text never typed into the session - plausible answers to
+ * questions the assistant had just asked. Such content may still be a genuine
+ * inbound message from another channel, so it is preserved verbatim for human
+ * review - but it must never be recorded as a worker result, never surfaced
+ * for lead reconciliation, and never replayed as an instruction.
+ */
+function quarantineWorkerStop(input, identity, extra) {
+  try {
+    let receiptId = shortId('qr');
+    const dirRel = 'quarantine/' + safeName(identity.parent_session_id)
+      + '/' + safeName(identity.worker_id);
+    let rel = dirRel + '/stop_' + safeName(receiptId) + '.json';
+    let tries = 0;
+    while (fs.existsSync(resolvePath(rel)) && tries < 20) {
+      tries += 1;
+      receiptId = shortId('qr') + '-' + tries;
+      rel = dirRel + '/stop_' + safeName(receiptId) + '.json';
+    }
+    if (fs.existsSync(resolvePath(rel))) return null;
+    let transcriptExists = false;
+    try {
+      transcriptExists = !!(extra.agent_transcript_path
+        && fs.existsSync(extra.agent_transcript_path));
+    } catch (e) { /* stays false */ }
+    const rec = Object.assign({
+      version: 1,
+      receipt_id: receiptId,
+      event: 'worker_stop_quarantined',
+      quarantined: true,
+      quarantine_reason: 'no_matching_start_receipt',
+      untrusted_content: true,
+      recorded_at: new Date().toISOString(),
+      parent_session_id: identity.parent_session_id,
+      worker_id: identity.worker_id,
+      worker_type: identity.worker_type,
+      surface: identity.surface,
+      cwd: typeof input.cwd === 'string' ? input.cwd : '',
+      turn_id: typeof input.turn_id === 'string' ? input.turn_id : '',
+      transcript_exists: transcriptExists
+    }, extra || {});
+    if (!writeJSON(rel, rec)) return null;
+    rec.relative_path = rel;
+    appendEvent({
+      event: 'worker_stop_quarantined',
+      session_id: identity.parent_session_id,
+      worker_id: identity.worker_id,
+      receipt_id: receiptId,
+      reason: rec.quarantine_reason
+    });
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Move already-recorded worker dirs that hold stops but no start into the
+ * quarantine tree. Cleans phantom receipts written before fail-closed stops
+ * existed; bounded, and a dir that cannot move is left in place.
+ */
+function sweepOrphanStops() {
+  let moved = 0;
+  try {
+    const root = resolvePath('workers');
+    for (const parent of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!parent.isDirectory()) continue;
+      const pdir = path.join(root, parent.name);
+      let children = [];
+      try { children = fs.readdirSync(pdir, { withFileTypes: true }); } catch (e) { continue; }
+      for (const w of children) {
+        if (!w.isDirectory() || w.name === 'unattributed') continue;
+        const wdir = path.join(pdir, w.name);
+        let hasStart = false;
+        let hasStop = false;
+        try {
+          for (const n of fs.readdirSync(wdir)) {
+            if (n.indexOf('start_') === 0 && n.endsWith('.json')) hasStart = true;
+            if (n.indexOf('stop_') === 0 && n.endsWith('.json')) hasStop = true;
+          }
+        } catch (e) { continue; }
+        if (hasStop && !hasStart) {
+          const dest = resolvePath('quarantine/' + parent.name + '/' + w.name);
+          if (fs.existsSync(dest)) continue;
+          ensureDir(path.dirname(dest));
+          try { fs.renameSync(wdir, dest); moved += 1; } catch (e) { /* leave in place */ }
+        }
+        if (moved >= 50) break;
+      }
+      if (moved >= 50) break;
+    }
+  } catch (e) { /* fail open */ }
+  if (moved) {
+    appendEvent({ event: 'orphan_stops_quarantined', moved: moved });
+  }
+  return moved;
+}
+
+/** Count quarantined stop receipts, bounded so a hook can print it cheaply. */
+function quarantinedCount() {
+  let count = 0;
+  try {
+    const root = resolvePath('quarantine');
+    const walk = (dir, depth) => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+      for (const entry of entries) {
+        if (count >= 500) return;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (depth > 0) walk(full, depth - 1);
+        } else if (entry.name.indexOf('stop_') === 0 && entry.name.endsWith('.json')) {
+          count += 1;
+        }
+      }
+    };
+    walk(root, 3);
+  } catch (e) { /* fail open */ }
+  return count;
+}
+
+/**
+ * First run of a scoped store seeds continuity state from the legacy shared
+ * root. Copy, never move: other surfaces may still run older hooks against
+ * the legacy layout, and their state is not this store's to relocate.
+ */
+function seedScopedStore() {
+  try {
+    const base = baseHome();
+    const root = home();
+    if (fs.existsSync(path.join(root, 'state', 'seed.json'))) return false;
+    if (fs.existsSync(path.join(root, 'state', 'arc.json'))) return false;
+    if (!fs.existsSync(path.join(base, 'state'))) return false;
+    const entries = ['config.json', 'state', 'breadcrumbs', 'checkpoints', 'sessions', 'reminders'];
+    const copied = [];
+    for (const name of entries) {
+      const src = path.join(base, name);
+      if (!fs.existsSync(src)) continue;
+      const dst = path.join(root, name);
+      try {
+        if (name === 'config.json') {
+          if (!fs.existsSync(dst)) {
+            ensureDir(root);
+            fs.copyFileSync(src, dst);
+            copied.push(name);
+          }
+        } else {
+          fs.cpSync(src, dst, { recursive: true, force: false, errorOnExist: false });
+          copied.push(name);
+        }
+      } catch (e) { /* per-entry fail open */ }
+    }
+    writeJSON('state/seed.json', {
+      version: 1,
+      seeded_at: new Date().toISOString(),
+      seeded_from: base,
+      entries: copied
+    });
+    appendEvent({ event: 'store_seeded', from: base, entries: copied });
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -1042,6 +1338,9 @@ function receiptReconciled(rec) {
       const bc = readJSON('breadcrumbs/' + file.name, null);
       if (breadcrumbRecordHasMarker(bc, marker)) return true;
     }
+    // Shared-tag bridge: the lead may have reconciled in the external
+    // tracker's records rather than a local Autocache breadcrumb.
+    if (externalRecordHasMarker(marker)) return true;
   } catch (e) { /* not reconciled */ }
   return false;
 }
@@ -1054,6 +1353,10 @@ function pendingWorkerReceipts(limit) {
     let rec = null;
     try { rec = JSON.parse(fs.readFileSync(item.full, 'utf8')); } catch (e) { /* ignore */ }
     if (!rec || typeof rec !== 'object' || !rec.receipt_id) continue;
+    // Unattributable stops (no start receipt) are never worker results.
+    // New ones land in quarantine/, but legacy phantoms written before
+    // fail-closed stops existed can still sit in workers/ - skip them.
+    if (!rec.start_receipt_id) continue;
     const key = String(rec.parent_session_id || '') + '::' + String(rec.worker_id || '');
     if (!latest.has(key)) latest.set(key, rec);
   }
@@ -1282,6 +1585,13 @@ module.exports = {
   MAX_EVENT_LOG_BYTES: MAX_EVENT_LOG_BYTES,
   DEFAULTS: DEFAULTS,
   home: home,
+  baseHome: baseHome,
+  storeScope: storeScope,
+  seedScopedStore: seedScopedStore,
+  sweepOrphanStops: sweepOrphanStops,
+  quarantinedCount: quarantinedCount,
+  externalBreadcrumbSnapshot: externalBreadcrumbSnapshot,
+  externalRecordHasMarker: externalRecordHasMarker,
   resolvePath: resolvePath,
   ensureDir: ensureDir,
   safeName: safeName,

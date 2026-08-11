@@ -11,6 +11,40 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
+### Added
+
+- Scoped stores: one universal state contract, one store per AI surface at
+  `<base>/stores/<scope>`. Scope is `AUTOCACHE_SCOPE`, else the process-level
+  surface name, else `default`. First run of a scope seeds continuity state
+  from a legacy unscoped layout by copy (never move) and records
+  `state/seed.json`. Older stores remain readable in place; nothing is
+  relocated out from under other surfaces still running older hooks.
+- Quarantine for unattributable stops: a `SubagentStop` with no matching start
+  receipt is preserved verbatim under `quarantine/` with `quarantined: true`,
+  `quarantine_reason: no_matching_start_receipt`, `untrusted_content: true`,
+  and a `transcript_exists` disk check. It is never written to `workers/`,
+  never surfaced as a worker result, never given a reconciliation directive,
+  and never replayed as an instruction. Session start prints a bounded count
+  only. Motivated by live phantom stop events observed 2026-08-11 arriving on
+  conversation turn boundaries with user-shaped `final_message` text.
+- `sweepOrphanStops()`: session start moves legacy stop-without-start worker
+  dirs from `workers/` into `quarantine/`; `pendingWorkerReceipts()` also
+  skips any stop lacking `start_receipt_id` so legacy phantoms can never
+  resurface.
+- Shared-tag bridge (inert by default): when no Autocache breadcrumb is open,
+  receipts bind to the newest active external breadcrumb owned by this
+  surface's actor, read from `config.json` `external_breadcrumb_dirs` /
+  `external_breadcrumb_owner`. Receipts now carry `breadcrumb_source`
+  (`autocache` | `external` | null), and exact-marker reconciliation also
+  searches the external tracker's active and completed records, bounded.
+
+### Changed
+
+- `recordWorkerStop()` is fail-closed: no start receipt now routes to
+  quarantine instead of writing an unpaired `workers/` receipt.
+
 ## [0.2.0] - 2026-08-11
 
 ### Added
