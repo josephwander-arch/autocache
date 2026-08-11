@@ -12,7 +12,7 @@
 
 set -u
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 DRY_RUN=0
 LINK=0
 UNINSTALL=0

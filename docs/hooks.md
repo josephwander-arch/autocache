@@ -1,6 +1,7 @@
 # Hook reference
 
-Five hooks. All Node, all zero-dependency, all fail open.
+Eight hook scripts across ten lifecycle events. All Node, all zero-dependency,
+all fail open.
 
 Registered in `hooks/hooks.json` and invoked by the harness as:
 
@@ -21,6 +22,8 @@ plugin paths contain spaces on Windows.
 | `transcript_path` | Path to the transcript file. Autocache does not read it |
 | `cwd` | Working directory |
 | `hook_event_name` | The event that fired |
+| `agent_id` | Stable native worker id when the event fires inside a subagent |
+| `agent_type` | Native worker profile/type when supplied by the harness |
 
 Event-specific fields are listed per hook below.
 
@@ -63,6 +66,7 @@ immediately.
 - `checkpoints/` for the newest checkpoint
 - `reminders.json` for anything due
 - `state/self_state.json` for focus and open questions
+- `workers/` for the newest unreconciled stop receipt per native worker
 
 **Writes:** `state/arc.json` (the running work-arc record - see
 [state-format.md](state-format.md)), and appends a `session_start` event to
@@ -75,7 +79,7 @@ opened one; it never did.
 
 **Output:** `hookSpecificOutput.additionalContext` containing a compact restore
 block - last session summary, the open breadcrumb and its last step, due reminders,
-and self-state focus. Nothing to restore means no output at all rather than a block
+pending worker results, and self-state focus. Nothing to restore means no output at all rather than a block
 that says "nothing to restore".
 
 Fork-chain state is part of the restore block: a breadcrumb that was forked away is
@@ -139,12 +143,9 @@ enforcement layer is the harness's own permission system, not Autocache.
 
 **Reads:** `breadcrumbs/active.json` and the active breadcrumb.
 
-**Writes:**
-
-- appends an automatic step to the open breadcrumb when `config.breadcrumb.auto_step`
-  is true, recording the tool name and target rather than the payload
-- increments `calls_since_step` on the breadcrumb and `tool_calls` on the session
-- records a backup entry when the backup helper ran
+**Writes:** for main-thread calls, increments `tool_calls` on `state/arc.json` and
+the active breadcrumb, and records write-target paths on those records. It never
+stores tool output and never invents a completed milestone.
 
 **Output:** none in the normal case. This hook is silent by design; it is
 bookkeeping.
@@ -156,6 +157,63 @@ session catches up instead of writing into a dead branch. The shared state layer
 refuses the write regardless, so even a bug here could not mutate a frozen record.
 
 Tool responses are not stored. Only metadata - which tool, which target, when.
+
+When the harness supplies a stable `agent_id`, the call is a native child event.
+It is written only to `workers/<parent-session>/<worker>/events.jsonl`; the hook
+returns before reading or writing the lead arc and breadcrumb. Claude documents
+this field on child tool hooks. Codex receives the same isolation whenever its
+event payload supplies the field; no path, timing, transcript, or tool-name
+heuristic is used to guess identity.
+
+Codex guarantees worker identity at SubagentStart/Stop but does not currently
+promise `agent_id` on every child PostToolUse payload. While a Codex worker is
+active, an untagged tool event is therefore quarantined under
+`workers/<parent-session>/unattributed/events.jsonl` and cannot touch the lead
+arc or breadcrumb. This may omit a simultaneous lead counter; it preserves the
+more important invariant that ambiguous child work cannot mutate the durable
+owner.
+
+---
+
+## SubagentStart - `hooks/subagent-start.js`
+
+**Fires:** when Codex or Claude starts a native subagent.
+
+**Input:** common fields, plus `agent_id`, `agent_type`, and optional `turn_id`.
+
+**Writes:** one immutable `start_<receipt-id>.json` under the worker's directory,
+including the parent breadcrumb and resolved chain head at start.
+
+**Output:** child-only context stating that native machinery controls execution,
+the parent remains the durable owner, and the child must return outcome, files,
+proof, blockers, and remaining work. It never blocks worker creation.
+
+---
+
+## SubagentStop - `hooks/subagent-stop.js`
+
+**Fires:** when a native subagent finishes responding.
+
+**Input:** common worker fields, plus `agent_transcript_path`,
+`last_assistant_message`, and `stop_hook_active`.
+
+**Writes:** one immutable `stop_<receipt-id>.json`. The final message is capped
+by `max_worker_result_chars` (default 4,000 characters); the transcript path is
+recorded but the transcript is not read.
+
+**Output:** a UI/system message naming the exact `[worker:<receipt-id>]` marker.
+The lead verifies the result and logs that marker in one milestone. The hook
+never blocks the stop and never mutates a breadcrumb.
+
+---
+
+## Claude native team events - `hooks/native-team-event.js`
+
+The same script records `TaskCreated`, `TaskCompleted`, and `TeammateIdle` as
+immutable receipts under `teams/<parent-session>/<team>/`. Task subject is
+capped at 300 characters and task description at 1,000. Claude's native task
+list, mailbox, permissions, and lead still control the team. Autocache never
+blocks a task transition or keeps a teammate active.
 
 ---
 
@@ -188,8 +246,8 @@ surfaces - only the adapter differs.
 
 | Surface | Adapter role |
 |---|---|
-| Claude Code | Native. Payload is already in the documented shape |
-| Codex | Maps Codex's hook config and payload fields onto the same events |
+| Claude Code | Native worker hooks plus native-team task/idle receipts |
+| Codex | Maps the common hooks plus `SubagentStart`/`SubagentStop` |
 | Grok | Read-only. No hooks. Grok narrates state and does not write it |
 
 Adapters are linted and fail-open-tested in CI on exactly the same terms as the

@@ -52,9 +52,10 @@ that is `%USERPROFILE%\.autocache\`.
 
 ## Properties that are supposed to hold
 
-- **Every write is atomic** - written as `<file>.tmp` in the same directory and then
-  renamed. So a truncated or half-written state file is not normal. If you see one,
-  say so; it is real information, not noise.
+- **Structured JSON replacement is atomic** - state JSON is written as `<file>.tmp`
+  in the same directory and then renamed. JSONL logs are append-only instead: keep
+  every valid line and ignore only a malformed or truncated final line after an
+  interrupted append. Never treat the entire JSONL file as an atomic replacement.
 - **Every hook fails open** - a missing, unreadable, or malformed file must never
   break the session. An empty restore is expected behavior on a fresh machine.
 - **State is shared verbatim across surfaces** - Claude Code and Codex read and write

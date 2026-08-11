@@ -23,6 +23,28 @@ try {
 
   const touched = store.isWriteTool(toolName) ? store.toolPaths(toolInput) : [];
 
+  // Native workers keep their own event stream. They never increment or write
+  // the lead's arc or active breadcrumb. Claude documents agent_id on tool
+  // hooks inside subagents; Codex and future adapters get the same isolation
+  // whenever they supply that stable field. No heuristic identity guessing.
+  if (store.workerIdentity(input)) {
+    store.recordWorkerTool(input, toolName, touched);
+    process.exit(0);
+  }
+
+  // Codex documents stable identity at worker start/stop, but not on every
+  // child tool event. During that ambiguous interval, preserve untagged events
+  // in a quarantine stream rather than risk counting a child action against
+  // the lead. This can omit a simultaneous lead counter; it cannot corrupt the
+  // durable owner. A new parent session naturally has no active-worker set.
+  if (store.surfaceName(input).toLowerCase() === 'codex') {
+    const activeIds = store.activeWorkerIds(input.session_id || '');
+    if (activeIds.length) {
+      store.recordUnattributedWorkerTool(input, toolName, touched, activeIds);
+      process.exit(0);
+    }
+  }
+
   // ---- arc counters -------------------------------------------------------
   const a = store.arc();
   a.tool_calls = (Number(a.tool_calls) || 0) + 1;

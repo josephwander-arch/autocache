@@ -57,6 +57,13 @@ Resolve with `os.homedir()`. Honor `AUTOCACHE_HOME` as an override.
     active.json             # the currently-open breadcrumb, or null
   checkpoints/
     <checkpoint-id>.json
+  workers/
+    <parent-session>/<worker>/
+      start_<receipt-id>.json # immutable native-worker start receipt
+      stop_<receipt-id>.json  # immutable result receipt
+      events.jsonl            # isolated child tool metadata; never the lead arc
+  teams/
+    <parent-session>/<team>/  # native task-created/completed and teammate-idle receipts
   state/
     self_state.json         # agent's own running notes about itself
     bag.json                # scratch key/value tags for the current arc
@@ -70,9 +77,10 @@ Resolve with `os.homedir()`. Honor `AUTOCACHE_HOME` as an override.
     events.jsonl            # append-only, rotated at 5 MB
 ```
 
-**Every write is atomic**: write to `<file>.tmp` in the same directory, then
-`fs.renameSync`. A half-written state file that reads as valid-but-truncated JSON
-is the exact failure mode this product exists to prevent.
+**Every structured JSON replacement is atomic**: write to `<file>.tmp` in the
+same directory, then `fs.renameSync`. Lifecycle receipts never replace an
+existing id. JSONL diagnostic streams append directly; readers skip an
+interrupted final line.
 
 **Every hook fails open.** Any throw, any parse error, any missing file exits 0
 silently. A continuity tool that breaks the session it is meant to protect is worse
@@ -88,6 +96,7 @@ Derived from the tiering of Autonomous's 121 tools. Free = these groups only:
 | Session lifecycle | start, add finding, list, get, close, export, delete |
 | Session summary / handoff | Write a continuation packet another agent can execute |
 | Breadcrumbs | start, step, add, complete, abort, status, list, adopt, backup; decisions (raise, resolve); fork-chain takeover (fork, retire) |
+| Native workers | use host-native execution; isolate identified child tool events; persist start/stop and team-task receipts; lead verifies and reconciles with an exact receipt marker |
 | Checkpoint / rollback | save, load, clear; git rollback helper |
 | Self-state + bag | self_state get/update; bag tag/read/clear |
 | Local reminders | add, list, complete, delete, check_due, recurring; time check |
@@ -184,7 +193,10 @@ Hooks to register:
 | `SessionStart` | `session-start.js` | Restore: last session summary, open breadcrumb, due reminders, self-state. Emit `hookSpecificOutput.additionalContext`. |
 | `UserPromptSubmit` | `user-prompt-submit.js` | Surface a matching prior finding when the prompt echoes past work. |
 | `PreToolUse` | `pre-tool-use.js` | Advisory only. Nudge for a breadcrumb on a 3+ step arc; warn before overwriting a file with no backup. Never block. |
-| `PostToolUse` | `post-tool-use.js` | Auto-append to the open breadcrumb; count tool calls since last logged step. |
+| `PostToolUse` | `post-tool-use.js` | Count main-thread tool calls and write targets on the lead arc; route identified child calls only to that worker's event stream. Never invent a completed milestone. |
+| `SubagentStart` | `subagent-start.js` | Snapshot parent chain head, write an immutable start receipt, and inject the child ownership boundary. |
+| `SubagentStop` | `subagent-stop.js` | Write an immutable final-result receipt and tell the lead the exact reconciliation marker. Never mutate the breadcrumb. |
+| `TaskCreated`, `TaskCompleted`, `TeammateIdle` | `native-team-event.js` | Record Claude native-team lifecycle receipts without replacing or blocking its task list and mailbox. |
 | `Stop` | `stop.js` | Auto-checkpoint the arc so the next session can resume. |
 
 Slash commands (`commands/*.md`, name = filename):
@@ -206,6 +218,12 @@ Ship an installer that materializes the same behavior into those directories:
 The Node hook scripts and the `~/.autocache/` state are **shared verbatim** across
 surfaces. That is the whole point: one state directory, many front ends. A session
 started under Claude Code must be resumable under Codex.
+
+Codex and Claude remain the worker control plane. Autocache consumes only stable
+native lifecycle identity (`agent_id`, `agent_type`, parent `session_id`) and
+never implements its own spawn, steering, wait, cancellation, permission, or
+worktree scheduler. A bounded worker return contributes to the current chain
+head; only a top-level ownership transfer creates a fork.
 
 ## Surface: Grok
 

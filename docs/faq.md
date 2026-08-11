@@ -75,6 +75,19 @@ Yes, on one machine. Each session gets its own file. The one shared piece of sta
 the active breadcrumb: one open arc per state root. If two sessions both want a
 tracked arc, give the second one its own `AUTOCACHE_HOME`.
 
+Native child workers are the exception by design: they may run in parallel under
+one lead and one top-level breadcrumb. Stable child identities get isolated event
+streams and immutable result receipts. They do not own, fork, or step the lead's
+breadcrumb; the lead verifies and reconciles each result.
+
+### Does Autocache replace Codex or Claude agent teams?
+
+No. Native machinery still creates, steers, waits for, cancels, controls permissions for, and
+stops workers. Autocache adds durable lifecycle receipts, isolates identified
+child tool events from the lead arc, and keeps unreconciled results visible across
+session boundaries. A bounded worker return stays on the same breadcrumb head;
+only a real top-level ownership transfer uses the fork chain.
+
 ### Can I use it with Claude Code, Codex, and Grok at the same time?
 
 Claude Code and Codex share the state directory verbatim - that is the design. A
@@ -90,10 +103,12 @@ state that the other surfaces wrote.
 
 ### How big does the state directory get?
 
-Small. Session and breadcrumb records are text metadata measured in kilobytes. The
-event log is capped at 5 MB and rotates, keeping exactly one previous file, so the
-practical ceiling is about 10 MB of logs plus your records. There is no growth
-mechanism that runs while you are not using it.
+Small for normal use. Session, breadcrumb, worker, and team receipts are text
+metadata measured in kilobytes. The shared event log is capped at 5 MB and keeps
+one rotated copy. Each native worker also has a local metadata-only event stream,
+so heavy parallel-agent use grows with the number of worker tool calls. Nothing
+grows while you are not using it, and deleting `workers/` or `teams/` only removes
+their continuity history.
 
 ### Nothing showed up at session start. What is wrong?
 

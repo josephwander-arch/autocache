@@ -55,6 +55,20 @@ const HOOK_EVENTS = [
     statusMessage: 'Autocache breadcrumb step'
   },
   {
+    file: 'subagent-start.js',
+    event: 'SubagentStart',
+    matcher: '.*',
+    timeout: 5,
+    statusMessage: 'Autocache recording native worker'
+  },
+  {
+    file: 'subagent-stop.js',
+    event: 'SubagentStop',
+    matcher: '.*',
+    timeout: 5,
+    statusMessage: 'Autocache saving native worker result'
+  },
+  {
     file: 'stop.js',
     event: 'Stop',
     timeout: 10,

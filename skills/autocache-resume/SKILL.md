@@ -1,6 +1,6 @@
 ---
 name: autocache-resume
-description: Reconstruct what the previous session was doing before answering or acting. Fires at session start, on /resume, and whenever the user opens with continuity language - "where were we", "what was I doing", "pick up where we left off", "continue", "still working on", "did we finish", "what's left", "yesterday", "earlier", "before the crash" - or when a SessionStart restore block is present (including a FROZEN breadcrumb or fork-chain pointer), or when the user references work you have no record of in this context.
+description: Reconstruct what the previous session was doing before answering or acting. Fires at session start, on /resume, whenever SessionStart surfaces a FROZEN breadcrumb, fork-chain pointer, or unreconciled native-worker receipt, and on continuity language such as "where were we", "pick up where we left off", "continue", "did we finish", "what's left", "yesterday", "earlier", or "before the crash".
 ---
 
 # Autocache: Resume
@@ -22,6 +22,7 @@ Read it directly if the SessionStart restore block is missing or truncated.
    - if that record carries `forked_to`, it is frozen - follow the chain to its
      head before reasoning about state (see "Catching up on a fork chain")
    - `checkpoints/` -> newest checkpoint for the same arc
+   - `workers/` -> newest unreconciled `stop_*.json` receipt per native worker
    - `state/self_state.json` and `state/bag.json`
    - `reminders.json` -> anything due
 3. **Reconcile against the filesystem before trusting the record.** A breadcrumb
@@ -35,6 +36,10 @@ Read it directly if the SessionStart restore block is missing or truncated.
    surface and is still fresh, say so and ask before taking it over. Taking over
    a live head means forking it, and forking has an eligibility ladder - see
    `autocache-handoff`.
+7. **Reconcile worker results as the lead.** For each pending worker receipt,
+   inspect its final message and claimed files, verify the decisive evidence,
+   then log one milestone containing `[worker:<receipt-id>]`. Do not fork for a
+   bounded worker return, and do not treat the receipt itself as validation.
 
 ## Catching up on a fork chain
 
@@ -71,6 +76,8 @@ in progress: wait for it to settle, then re-read.
 - Do not write to a frozen record, and do not re-open one. The chain only grows
   forward from its head.
 - Do not claim the tool "remembered" anything that is not in the state files.
+- Do not silence a pending worker receipt by writing its marker before checking
+  the result it points to.
 
 ## Worked example
 

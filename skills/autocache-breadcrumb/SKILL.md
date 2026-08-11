@@ -111,6 +111,29 @@ If `active.json` names an operation you did not open, do not silently take it
 over. Adopt it deliberately and say you are adopting it; if it is fresh and
 another surface may still be working it, ask first.
 
+## Native workers
+
+Use the host's native machinery to spawn, steer, wait for, and stop workers.
+Autocache does not replace that machinery. Its `SubagentStart` and
+`SubagentStop` hooks create local worker receipts and inject the child boundary:
+
+- a child never adopts, forks, steps, completes, aborts, or repoints the
+  parent's breadcrumb
+- identified child tool events go to that worker's own event stream, not the
+  lead's arc counters or breadcrumb
+- the worker returns outcome, files, proof, blockers, and remaining work
+- the lead verifies the return before merging it into the operation
+
+An unreconciled stop receipt surfaces at SessionStart. Reconcile it only after
+verification by logging one lead-owned milestone that contains its exact marker:
+
+`[worker:<receipt-id>]`
+
+The marker is an acknowledgement of reviewed evidence, not proof by itself.
+Never paste the marker into a step merely to silence the reminder. A worker
+result is a contribution to the current head; it is not a fork and never creates
+a second live head.
+
 ## Worked example
 
 ```

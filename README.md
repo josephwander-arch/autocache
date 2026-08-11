@@ -73,6 +73,10 @@ Override the location with the `AUTOCACHE_HOME` environment variable.
     active.json             the currently-open breadcrumb, or null
   checkpoints/
     <checkpoint-id>.json    resumable snapshot of the arc
+  workers/
+    <session>/<worker>/     immutable start/stop receipts and child tool events
+  teams/
+    <session>/<team>/       Claude native-team task and idle receipts
   state/
     self_state.json         the agent's running notes about itself
     bag.json                scratch key/value tags for the current arc
@@ -81,8 +85,10 @@ Override the location with the `AUTOCACHE_HOME` environment variable.
     events.jsonl            append-only, rotated at 5 MB
 ```
 
-Plain JSON. Human-readable. Every write is atomic (`<file>.tmp` then rename), so a
-crash mid-write cannot leave you with a truncated file that still parses.
+Plain JSON. Human-readable. Structured record replacement is atomic
+(`<file>.tmp` then rename), so a crash cannot replace a good receipt with a
+truncated one. Diagnostic `events.jsonl` streams append directly; a crash can
+leave one truncated final line, which readers must ignore.
 Full schemas: [docs/state-format.md](docs/state-format.md).
 
 ## Free vs paid
@@ -95,12 +101,13 @@ Full schemas: [docs/state-format.md](docs/state-format.md).
 | Session lifecycle: start, finding, list, get, close, export, delete | Yes | Yes |
 | Session summary and handoff packets | Yes | Yes |
 | Breadcrumbs: start, step, complete, abort, status, list, adopt, backup | Yes | Yes |
+| Native worker receipts, child-event isolation, lead reconciliation | Yes | Yes |
 | Checkpoint, load, clear, git rollback helper | Yes | Yes |
 | Self-state and scratch bag | Yes | Yes |
 | Local reminders, recurring, time check | Yes | Yes |
 | Health check, error log, fallback suggestion | Yes | Yes |
 | Config backup and validation before edits | Yes | Yes |
-| Scope | Single machine, single work-arc | Accumulating knowledge base |
+| Scope | Single machine, one top-level work arc plus native child workers | Accumulating knowledge base |
 | Knowledge extraction from your sessions | No | Yes |
 | Semantic, lexical, and graph retrieval | No | Yes |
 | Index maintenance and consolidation | No | Yes |
@@ -125,6 +132,10 @@ paid tier: [docs/upgrade.md](docs/upgrade.md).
   session boundary. The name refers to caching *your work context* on disk, not to the
   API's token cache. The two are unrelated.
 - **It does not make the model smarter.** It restores context. That is all it does.
+- **It does not replace native agent teams.** Codex and Claude still spawn,
+  steer, wait for, and stop their workers. Autocache isolates identified child
+  events, persists their return receipts, and leaves one durable top-level
+  fork-chain owner.
 - **It does not sync across machines in v1.** State is local. If you want it on two
   machines, you move the directory yourself.
 - **It is not a knowledge base.** No extraction, no retrieval, no learning. Those are

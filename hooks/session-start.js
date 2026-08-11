@@ -123,6 +123,19 @@ try {
     }
   }
 
+  // ---- native worker results awaiting lead reconciliation -----------------
+  const pendingWorkers = store.pendingWorkerReceipts(5);
+  if (pendingWorkers.length) {
+    lines.push('Native worker results awaiting lead reconciliation (' + pendingWorkers.length + '):');
+    for (const worker of pendingWorkers) {
+      const label = worker.worker_type || worker.worker_id || 'worker';
+      const summary = worker.final_message ? ': ' + store.truncate(worker.final_message, 220) : '';
+      lines.push('  - ' + label + ' [' + worker.receipt_id + ']' + summary);
+      lines.push('    verify, then log a breadcrumb milestone containing [worker:'
+        + worker.receipt_id + ']');
+    }
+  }
+
   // ---- due reminders ------------------------------------------------------
   const due = store.dueReminders(Date.now());
   if (due.length) {
@@ -175,7 +188,8 @@ try {
     source: input.source || '',
     restored: lines.length > 0,
     breadcrumb_id: bc && bc.id ? bc.id : null,
-    due_reminders: due.length
+    due_reminders: due.length,
+    pending_worker_results: pendingWorkers.length
   });
 
   if (!lines.length || cfg.quiet === true) process.exit(0);

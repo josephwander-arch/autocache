@@ -11,8 +11,25 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-11
+
 ### Added
 
+- **Native worker integration.** Codex and Claude keep their native spawn,
+  steering, wait, cancellation, permission, and worktree machinery. Autocache
+  now records immutable `SubagentStart` and `SubagentStop` receipts keyed by the
+  native parent/session and worker ids. Identified child `PostToolUse` events go
+  to a per-worker stream and cannot increment or mutate the lead arc or active
+  breadcrumb. Claude `TaskCreated`, `TaskCompleted`, and `TeammateIdle` events
+  get separate native-team receipts without replacing its task list or mailbox.
+  Codex does not promise worker identity on every child tool payload; while a
+  worker is active, untagged events are quarantined instead of being allowed to
+  change the lead arc. This prefers an omitted counter over a false owner write.
+- **Lead-only worker reconciliation.** SessionStart resurfaces the latest
+  unreconciled result per worker. The lead verifies it and records the exact
+  `[worker:<receipt-id>]` marker in one breadcrumb milestone. A bounded worker
+  never forks or owns the top-level chain; fork remains reserved for transfer of
+  top-level outcome responsibility between sessions, surfaces, or machines.
 - **Fork-chain takeover.** Cross-session and cross-agent handoff of an open
   breadcrumb is now a chain of records with exactly one live head. `/breadcrumb
   fork <id>` writes a new breadcrumb carrying the remaining steps and unresolved
@@ -134,5 +151,6 @@ Autocache remembers your work. Autonomous remembers your knowledge.
 - State is local. There is no cross-machine sync in v1.
 - Telemetry is off by default and no hook makes any network call.
 
-[Unreleased]: https://github.com/josephwander-arch/autocache/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/josephwander-arch/autocache/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/josephwander-arch/autocache/releases/tag/v0.2.0
 [0.1.0]: https://github.com/josephwander-arch/autocache/releases/tag/v0.1.0

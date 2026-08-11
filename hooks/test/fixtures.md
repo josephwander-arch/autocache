@@ -216,6 +216,23 @@ another 15 calls pass). Then assert:
 
 Non-write tools (`Bash`, `Read`, `Grep`) increment counters but record no paths.
 
+## Native worker and team lifecycle
+
+The executable cross-platform regression covers SubagentStart, child
+PostToolUse isolation, SubagentStop, SessionStart reconciliation, a parent fork
+while a worker is running, Claude team task/idle receipts, twelve simultaneous
+worker streams, and the no-`*.tmp` invariant:
+
+```sh
+node .github/scripts/worker-lifecycle.cjs
+```
+
+It must report every assertion passed. In particular, neither a single child
+tool call nor the twelve parallel calls may change the lead breadcrumb's
+`tool_calls`; the lead's own PostToolUse must still increment it; and a pending
+stop receipt must disappear only after an exact `[worker:<receipt-id>]` marker
+is logged on the chain.
+
 ## stop.js
 
 ```sh
@@ -416,7 +433,7 @@ Delete `config.json` again before running the restore fixtures.
 
 ## Malformed-input matrix (CI asserts exit 0 on every cell)
 
-Run each payload against each of the five hooks. Twenty-five combinations, all
+Run each payload against every hook script. All combinations must
 must exit 0, and none may write anything to stdout that is not valid JSON.
 
 | Case | stdin |
@@ -432,7 +449,7 @@ must exit 0, and none may write anything to stdout that is not valid JSON.
 | huge prompt | a 1 MB string in `prompt` |
 
 ```sh
-for f in session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js stop.js; do
+for f in session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js subagent-start.js subagent-stop.js native-team-event.js stop.js; do
   for payload in 'not json at all {{{' '' '[1,2,3]' '"hello"' 'null' '{"tool_name":null,"tool_input":"nope","prompt":42}'; do
     printf '%s' "$payload" | node "$f" >/dev/null 2>&1
     [ $? -eq 0 ] || { echo "FAIL $f <- $payload"; exit 1; }
@@ -454,7 +471,7 @@ echo "fail-open matrix passed"
 
 ```sh
 AUTOCACHE_HOME="Z:/nope/does/not/exist" sh -c '
-for f in session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js stop.js; do
+for f in session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js subagent-start.js subagent-stop.js native-team-event.js stop.js; do
   echo "{\"prompt\":\"one two three four five\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"x.txt\"}}" | node $f >/dev/null 2>&1
   [ $? -eq 0 ] || { echo "FAIL $f"; exit 1; }
 done
@@ -464,7 +481,7 @@ echo "broken-environment matrix passed"'
 ## Lint
 
 ```sh
-for f in lib/store.js session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js stop.js; do
+for f in lib/store.js session-start.js user-prompt-submit.js pre-tool-use.js post-tool-use.js subagent-start.js subagent-stop.js native-team-event.js stop.js; do
   node --check "$f" || exit 1
 done
 node -e "JSON.parse(require('fs').readFileSync('hooks.json','utf8'))"

@@ -35,7 +35,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$Version = '0.1.0'
+$Version = '0.2.0'
 $rows = New-Object System.Collections.ArrayList
 $failures = 0
 

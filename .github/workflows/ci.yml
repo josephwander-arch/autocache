@@ -92,6 +92,9 @@ jobs:
       - name: Every hook exits 0 under every failure mode
         run: node .github/scripts/fail-open.cjs
 
+      - name: Native workers stay isolated from the lead fork chain
+        run: node .github/scripts/worker-lifecycle.cjs
+
       - name: Report any state written outside the sandbox
         if: always()
         shell: bash

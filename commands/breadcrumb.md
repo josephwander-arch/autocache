@@ -72,6 +72,20 @@ current head, so the chain grows and every hop stays attributed. Before forking 
 another session may still hold, apply the takeover eligibility ladder in the
 `autocache-handoff` skill.
 
+## Native worker result
+
+A bounded native worker does not take ownership and does not get a breadcrumb
+fork. Its stop hook writes an immutable receipt under `workers/` and gives the
+lead an exact marker. After independently verifying the worker's output, log the
+lead-owned milestone with the marker in the step text:
+
+    verified parser worker: 17/17 focused tests [worker:wr_20260811T130000Z_a1b2c3]
+
+SessionStart keeps resurfacing the latest unreconciled result for each worker
+until that exact marker appears in a breadcrumb step. The marker records that
+the lead reviewed and incorporated the result; it is never a substitute for the
+verification text beside it.
+
 ## Run
 
 Set `MODE` and the relevant fields, write to a temp file, run `node "<path>"`.

@@ -91,7 +91,11 @@ if (parsed.has(hooksManifest)) {
       'PostToolUse',
       'Notification',
       'Stop',
+      'SubagentStart',
       'SubagentStop',
+      'TaskCreated',
+      'TaskCompleted',
+      'TeammateIdle',
       'PreCompact'
     ]);
     for (const [event, matchers] of Object.entries(eventMap)) {

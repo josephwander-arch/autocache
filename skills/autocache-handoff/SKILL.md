@@ -42,6 +42,18 @@ Write all five. A missing section is the one the receiver needed.
 - **No emoji, no decoration.** Plain text, absolute paths.
 - **Verify the write.** Read the packet back before claiming it was handed off.
 
+## Worker return is not an ownership handoff
+
+A native subagent or teammate returning evidence to its lead does not own the
+top-level operation. Do not fork the breadcrumb for a bounded worker and do not
+let the worker step or complete it. Verify the worker's result, log one
+lead-owned milestone containing its exact `[worker:<receipt-id>]` marker, and
+keep the same live head.
+
+Use the fork-chain handoff below only when outcome responsibility moves to a
+different top-level session, surface, or machine. That distinction preserves
+native parallel execution without creating competing durable owners.
+
 ## Ownership moves through the fork chain
 
 The packet transfers knowledge. Ownership transfers by **forking** the open

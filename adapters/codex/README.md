@@ -49,8 +49,20 @@ Events registered, matching the plugin one for one:
 | `SessionStart` | `session-start.js` | Restore last session summary, open breadcrumb, due reminders, self-state |
 | `UserPromptSubmit` | `user-prompt-submit.js` | Surface a matching prior finding when the prompt echoes past work |
 | `PreToolUse` | `pre-tool-use.js` | Advisory only. Never blocks |
-| `PostToolUse` | `post-tool-use.js` | Auto-append to the open breadcrumb |
+| `PostToolUse` | `post-tool-use.js` | Count lead tool calls; isolate identified child events in worker streams |
+| `SubagentStart` | `subagent-start.js` | Record native worker identity and inject its no-ownership boundary |
+| `SubagentStop` | `subagent-stop.js` | Persist the worker result for lead verification and reconciliation |
 | `Stop` | `stop.js` | Auto-checkpoint the arc |
+
+Codex remains the worker executor and coordinator. Autocache does not replace
+`spawn_agent`, follow-up, wait, interrupt, permissions, or worktrees. When Codex
+supplies `agent_id` on a child tool event, that event is isolated under the
+worker's state directory and cannot change the lead arc or breadcrumb. The
+SubagentStart/Stop registrations themselves are stable and always record the
+worker lifecycle. While a worker is active, an untagged Codex event is
+quarantined as unattributed rather than allowed to change the lead. That may
+under-count a simultaneous lead tool call, but it cannot corrupt ownership. No
+heuristic identity guessing is used.
 
 Registration rules the installer holds itself to:
 

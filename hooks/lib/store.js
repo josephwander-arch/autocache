@@ -7,7 +7,8 @@
  * Contract for every function in this file:
  *   - it never throws to the caller
  *   - on any error it returns the documented fallback
- *   - every write is atomic (write <file>.tmp, then fs.renameSync)
+ *   - structured JSON replacement is atomic (write <file>.tmp, then rename)
+ *   - JSONL telemetry is append-only and readers must ignore a truncated tail
  *
  * State root: os.homedir()/.autocache, overridable with AUTOCACHE_HOME.
  */
@@ -27,7 +28,9 @@ const DEFAULTS = {
   max_touched_files: 50,
   max_auto_checkpoints: 50,
   findings_scan_sessions: 25,
-  max_findings_scanned: 400
+  max_findings_scanned: 400,
+  max_worker_receipts_scanned: 200,
+  max_worker_result_chars: 4000
 };
 
 /* ------------------------------------------------------------------ paths */
@@ -660,6 +663,408 @@ function lastSession() {
   return recs[0] || null;
 }
 
+/* ---------------------------------------------------------- native workers */
+
+function surfaceName(input) {
+  try {
+    if (input && typeof input.surface === 'string' && input.surface.trim()) {
+      return input.surface.trim();
+    }
+    for (const arg of process.argv.slice(2)) {
+      if (typeof arg === 'string' && arg.indexOf('--surface=') === 0) {
+        return arg.slice('--surface='.length).trim();
+      }
+    }
+    if (process.env.AUTOCACHE_SURFACE) return String(process.env.AUTOCACHE_SURFACE).trim();
+    if (process.env.CLAUDE_PLUGIN_ROOT) return 'claude-code';
+  } catch (e) { /* fall through */ }
+  return 'unknown';
+}
+
+/**
+ * Normalize the stable worker identity supplied by native hook runtimes.
+ * No agent_id means main-thread work; never infer worker identity from a tool
+ * name, cwd, transcript path, or timing.
+ */
+function workerIdentity(input) {
+  try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    const workerId = typeof input.agent_id === 'string' ? input.agent_id.trim() : '';
+    if (!workerId) return null;
+    return {
+      parent_session_id: typeof input.session_id === 'string' && input.session_id.trim()
+        ? input.session_id.trim() : 'unknown-session',
+      worker_id: workerId,
+      worker_type: typeof input.agent_type === 'string' ? input.agent_type.trim() : '',
+      surface: surfaceName(input)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function workerDir(identity) {
+  if (!identity) return '';
+  return 'workers/' + safeName(identity.parent_session_id) + '/' + safeName(identity.worker_id);
+}
+
+function breadcrumbSnapshot() {
+  const out = { breadcrumb_id: null, chain_head_id: null };
+  try {
+    const bc = activeBreadcrumb();
+    if (!bc) return out;
+    out.breadcrumb_id = bc.id || null;
+    const head = chainHead(bc);
+    out.chain_head_id = head && head.id ? head.id : out.breadcrumb_id;
+  } catch (e) { /* fall through */ }
+  return out;
+}
+
+function appendWorkerEvent(input, data) {
+  try {
+    const identity = workerIdentity(input);
+    if (!identity) return false;
+    const rel = workerDir(identity) + '/events.jsonl';
+    const target = resolvePath(rel);
+    ensureDir(path.dirname(target));
+    const rec = Object.assign({
+      version: 1,
+      recorded_at: new Date().toISOString(),
+      parent_session_id: identity.parent_session_id,
+      worker_id: identity.worker_id,
+      worker_type: identity.worker_type,
+      surface: identity.surface
+    }, data || {});
+    fs.appendFileSync(target, JSON.stringify(rec) + '\n', 'utf8');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function latestWorkerReceipt(identity, kind) {
+  try {
+    const dir = resolvePath(workerDir(identity));
+    const prefix = String(kind || '') + '_';
+    const files = fs.readdirSync(dir)
+      .filter((name) => name.indexOf(prefix) === 0 && name.endsWith('.json'))
+      .map((name) => {
+        let mtime = 0;
+        try { mtime = fs.statSync(path.join(dir, name)).mtimeMs; } catch (e) { /* ignore */ }
+        return { name: name, mtime: mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    if (!files.length) return null;
+    const raw = fs.readFileSync(path.join(dir, files[0].name), 'utf8');
+    const rec = JSON.parse(raw);
+    return rec && typeof rec === 'object' && !Array.isArray(rec) ? rec : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Native workers that have a start receipt newer than their latest stop. */
+function activeWorkerIds(parentSessionId) {
+  const out = [];
+  try {
+    const parent = safeName(parentSessionId || 'unknown-session');
+    const root = resolvePath('workers/' + parent);
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === 'unattributed') continue;
+      const dir = path.join(root, entry.name);
+      const latest = (prefix) => {
+        let found = null;
+        for (const name of fs.readdirSync(dir)) {
+          if (name.indexOf(prefix + '_') !== 0 || !name.endsWith('.json')) continue;
+          const full = path.join(dir, name);
+          let mtime = 0;
+          try { mtime = fs.statSync(full).mtimeMs; } catch (e) { /* ignore */ }
+          if (!found || mtime > found.mtime) found = { full: full, mtime: mtime };
+        }
+        if (!found) return null;
+        try {
+          const rec = JSON.parse(fs.readFileSync(found.full, 'utf8'));
+          return { record: rec, mtime: found.mtime };
+        } catch (e) {
+          return null;
+        }
+      };
+      const start = latest('start');
+      const stop = latest('stop');
+      if (!start) continue;
+      const startAt = Date.parse(start.record.recorded_at || '') || start.mtime;
+      const stopAt = stop ? (Date.parse(stop.record.recorded_at || '') || stop.mtime) : -1;
+      if (!stop || startAt > stopAt) out.push(start.record.worker_id || entry.name);
+    }
+  } catch (e) { /* no active workers */ }
+  return out;
+}
+
+/**
+ * Codex does not currently promise agent_id on child PostToolUse payloads.
+ * While a native worker is active, an untagged Codex event is ambiguous: keep
+ * it out of the lead arc and preserve it in a session-level quarantine stream.
+ */
+function recordUnattributedWorkerTool(input, toolName, touched, activeIds) {
+  try {
+    const parent = typeof input.session_id === 'string' && input.session_id
+      ? input.session_id : 'unknown-session';
+    const target = resolvePath('workers/' + safeName(parent) + '/unattributed/events.jsonl');
+    ensureDir(path.dirname(target));
+    const rec = {
+      version: 1,
+      recorded_at: new Date().toISOString(),
+      event: 'worker_tool_unattributed',
+      surface: surfaceName(input),
+      parent_session_id: parent,
+      active_worker_ids: Array.isArray(activeIds) ? activeIds.slice(0, 20) : [],
+      tool: String(toolName || ''),
+      tool_use_id: typeof input.tool_use_id === 'string' ? input.tool_use_id : '',
+      write_paths: Array.isArray(touched) ? touched.slice(0, 10) : []
+    };
+    fs.appendFileSync(target, JSON.stringify(rec) + '\n', 'utf8');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function writeWorkerReceipt(kind, input, extra) {
+  try {
+    const identity = workerIdentity(input);
+    if (!identity) return null;
+    const snap = breadcrumbSnapshot();
+    let receiptId = shortId('wr');
+    let rel = workerDir(identity) + '/' + kind + '_' + safeName(receiptId) + '.json';
+    let tries = 0;
+    while (fs.existsSync(resolvePath(rel)) && tries < 20) {
+      tries += 1;
+      receiptId = shortId('wr') + '-' + tries;
+      rel = workerDir(identity) + '/' + kind + '_' + safeName(receiptId) + '.json';
+    }
+    if (fs.existsSync(resolvePath(rel))) return null;
+    const rec = Object.assign({
+      version: 1,
+      receipt_id: receiptId,
+      event: kind === 'start' ? 'worker_start' : 'worker_stop',
+      recorded_at: new Date().toISOString(),
+      parent_session_id: identity.parent_session_id,
+      worker_id: identity.worker_id,
+      worker_type: identity.worker_type,
+      surface: identity.surface,
+      cwd: typeof input.cwd === 'string' ? input.cwd : '',
+      turn_id: typeof input.turn_id === 'string' ? input.turn_id : '',
+      breadcrumb_id: snap.breadcrumb_id,
+      chain_head_id: snap.chain_head_id
+    }, extra || {});
+    if (!writeJSON(rel, rec)) return null;
+    rec.relative_path = rel;
+    appendWorkerEvent(input, {
+      event: rec.event,
+      receipt_id: receiptId,
+      breadcrumb_id: rec.breadcrumb_id,
+      chain_head_id: rec.chain_head_id
+    });
+    appendEvent({
+      event: rec.event,
+      session_id: identity.parent_session_id,
+      worker_id: identity.worker_id,
+      worker_type: identity.worker_type,
+      receipt_id: receiptId,
+      breadcrumb_id: rec.breadcrumb_id
+    });
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+function recordWorkerStart(input) {
+  return writeWorkerReceipt('start', input, {
+    permission_mode: typeof input.permission_mode === 'string' ? input.permission_mode : ''
+  });
+}
+
+function recordWorkerStop(input) {
+  try {
+    const identity = workerIdentity(input);
+    if (!identity) return null;
+    const start = latestWorkerReceipt(identity, 'start');
+    const cap = Math.max(200, Number(config().max_worker_result_chars) || 4000);
+    return writeWorkerReceipt('stop', input, {
+      start_receipt_id: start && start.receipt_id ? start.receipt_id : null,
+      breadcrumb_id_at_start: start && start.breadcrumb_id ? start.breadcrumb_id : null,
+      chain_head_id_at_start: start && start.chain_head_id ? start.chain_head_id : null,
+      agent_transcript_path: typeof input.agent_transcript_path === 'string'
+        ? input.agent_transcript_path : '',
+      final_message: typeof input.last_assistant_message === 'string'
+        ? truncate(input.last_assistant_message, cap) : '',
+      stop_hook_active: input.stop_hook_active === true
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+function recordWorkerTool(input, toolName, touched) {
+  return appendWorkerEvent(input, {
+    event: 'worker_tool',
+    tool: String(toolName || ''),
+    tool_use_id: typeof input.tool_use_id === 'string' ? input.tool_use_id : '',
+    write_paths: Array.isArray(touched) ? touched.slice(0, 10) : []
+  });
+}
+
+function recordNativeTeamEvent(input) {
+  try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    const event = typeof input.hook_event_name === 'string' ? input.hook_event_name : '';
+    if (!/^(TaskCreated|TaskCompleted|TeammateIdle)$/.test(event)) return null;
+    const parentSession = typeof input.session_id === 'string' && input.session_id
+      ? input.session_id : 'unknown-session';
+    const teamName = typeof input.team_name === 'string' && input.team_name
+      ? input.team_name : 'unknown-team';
+    let receiptId = shortId('tr');
+    const snap = breadcrumbSnapshot();
+    const rec = {
+      version: 1,
+      receipt_id: receiptId,
+      event: event,
+      recorded_at: new Date().toISOString(),
+      parent_session_id: parentSession,
+      surface: surfaceName(input),
+      team_name: teamName,
+      teammate_name: typeof input.teammate_name === 'string' ? input.teammate_name : '',
+      task_id: typeof input.task_id === 'string' ? input.task_id : '',
+      task_subject: typeof input.task_subject === 'string' ? truncate(input.task_subject, 300) : '',
+      task_description: typeof input.task_description === 'string' ? truncate(input.task_description, 1000) : '',
+      cwd: typeof input.cwd === 'string' ? input.cwd : '',
+      breadcrumb_id: snap.breadcrumb_id,
+      chain_head_id: snap.chain_head_id
+    };
+    let rel = 'teams/' + safeName(parentSession) + '/' + safeName(teamName)
+      + '/' + safeName(event.toLowerCase()) + '_' + safeName(receiptId) + '.json';
+    let tries = 0;
+    while (fs.existsSync(resolvePath(rel)) && tries < 20) {
+      tries += 1;
+      receiptId = shortId('tr') + '-' + tries;
+      rec.receipt_id = receiptId;
+      rel = 'teams/' + safeName(parentSession) + '/' + safeName(teamName)
+        + '/' + safeName(event.toLowerCase()) + '_' + safeName(receiptId) + '.json';
+    }
+    if (fs.existsSync(resolvePath(rel))) return null;
+    if (!writeJSON(rel, rec)) return null;
+    rec.relative_path = rel;
+    appendEvent({
+      event: 'native_team_' + event.toLowerCase(),
+      session_id: parentSession,
+      team_name: teamName,
+      teammate_name: rec.teammate_name,
+      task_id: rec.task_id,
+      receipt_id: receiptId,
+      breadcrumb_id: rec.breadcrumb_id
+    });
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
+function collectWorkerStops() {
+  const out = [];
+  const cap = Math.max(10, Number(config().max_worker_receipts_scanned) || 200);
+  try {
+    const root = resolvePath('workers');
+    const walk = (dir) => {
+      if (out.length >= cap * 4) return;
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile() && /^stop_.*\.json$/.test(entry.name)) {
+          let mtime = 0;
+          try { mtime = fs.statSync(full).mtimeMs; } catch (e) { /* ignore */ }
+          out.push({ full: full, mtime: mtime });
+        }
+      }
+    };
+    walk(root);
+  } catch (e) { /* no worker directory */ }
+  out.sort((a, b) => b.mtime - a.mtime);
+  return out.slice(0, cap);
+}
+
+function breadcrumbRecordHasMarker(bc, marker) {
+  try {
+    if (!bc || typeof bc !== 'object') return false;
+    const lists = []
+      .concat(Array.isArray(bc.steps) ? bc.steps : [])
+      .concat(Array.isArray(bc.log) ? bc.log : [])
+      .concat(Array.isArray(bc.completed_steps) ? bc.completed_steps : []);
+    return lists.some((step) => stepText(step).indexOf(marker) !== -1);
+  } catch (e) {
+    return false;
+  }
+}
+
+function receiptReconciled(rec) {
+  try {
+    if (!rec || !rec.receipt_id) return false;
+    const marker = '[worker:' + rec.receipt_id + ']';
+    const ids = [rec.chain_head_id, rec.chain_head_id_at_start, rec.breadcrumb_id, rec.breadcrumb_id_at_start]
+      .filter((v, i, a) => typeof v === 'string' && v && a.indexOf(v) === i);
+    const seen = new Set();
+    for (const id of ids) {
+      let cur = chainHead(id).record || readBreadcrumb(id);
+      while (cur && cur.id && !seen.has(cur.id) && seen.size < 100) {
+        seen.add(cur.id);
+        if (breadcrumbRecordHasMarker(cur, marker)) return true;
+        cur = cur.forked_from ? readBreadcrumb(cur.forked_from) : null;
+      }
+    }
+
+    // A worker may start before a breadcrumb opens. Bounded fallback: search
+    // recent breadcrumb records for the exact marker rather than losing the
+    // receipt or treating an unrelated summary as acknowledgement.
+    const dir = resolvePath('breadcrumbs');
+    const files = fs.readdirSync(dir)
+      .filter((name) => name.endsWith('.json') && name !== 'active.json')
+      .map((name) => {
+        let mtime = 0;
+        try { mtime = fs.statSync(path.join(dir, name)).mtimeMs; } catch (e) { /* ignore */ }
+        return { name: name, mtime: mtime };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 200);
+    for (const file of files) {
+      const bc = readJSON('breadcrumbs/' + file.name, null);
+      if (breadcrumbRecordHasMarker(bc, marker)) return true;
+    }
+  } catch (e) { /* not reconciled */ }
+  return false;
+}
+
+/** Latest unreconciled stop receipt per native worker. */
+function pendingWorkerReceipts(limit) {
+  const max = Math.max(1, Number(limit) || 5);
+  const latest = new Map();
+  for (const item of collectWorkerStops()) {
+    let rec = null;
+    try { rec = JSON.parse(fs.readFileSync(item.full, 'utf8')); } catch (e) { /* ignore */ }
+    if (!rec || typeof rec !== 'object' || !rec.receipt_id) continue;
+    const key = String(rec.parent_session_id || '') + '::' + String(rec.worker_id || '');
+    if (!latest.has(key)) latest.set(key, rec);
+  }
+  const out = [];
+  for (const rec of latest.values()) {
+    if (!receiptReconciled(rec)) out.push(rec);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 /** Flattened findings across recent sessions: { text, session_id, date }. */
 function findings(limit) {
   const cfg = config();
@@ -904,6 +1309,17 @@ module.exports = {
   recentSessions: recentSessions,
   lastSession: lastSession,
   findings: findings,
+  surfaceName: surfaceName,
+  workerIdentity: workerIdentity,
+  activeWorkerIds: activeWorkerIds,
+  appendWorkerEvent: appendWorkerEvent,
+  recordWorkerStart: recordWorkerStart,
+  recordWorkerStop: recordWorkerStop,
+  recordWorkerTool: recordWorkerTool,
+  recordUnattributedWorkerTool: recordUnattributedWorkerTool,
+  recordNativeTeamEvent: recordNativeTeamEvent,
+  pendingWorkerReceipts: pendingWorkerReceipts,
+  receiptReconciled: receiptReconciled,
   dueReminders: dueReminders,
   selfState: selfState,
   bag: bag,

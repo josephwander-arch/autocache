@@ -15,6 +15,13 @@ or encrypted, and nothing is written outside this tree.
     active.json
   checkpoints/
     <checkpoint-id>.json
+  workers/
+    <parent-session>/<worker>/
+      start_<receipt-id>.json
+      stop_<receipt-id>.json
+      events.jsonl
+  teams/
+    <parent-session>/<team>/<event>_<receipt-id>.json
   state/
     self_state.json
     bag.json
@@ -28,11 +35,14 @@ or encrypted, and nothing is written outside this tree.
 **Root resolution.** `AUTOCACHE_HOME` if set, otherwise `path.join(os.homedir(), '.autocache')`.
 Paths are always built with `path.join` - no hardcoded separators.
 
-**Atomic writes.** Every write goes to `<file>.tmp` in the same directory and is then
-moved into place with `fs.renameSync`. Rename within a directory is atomic on all
-three supported platforms. A crash therefore leaves either the old file or the new
-file, never a truncated one that still parses as valid JSON. That specific failure -
-valid-but-truncated state - is the thing this product exists to prevent.
+**Atomic structured records.** JSON objects go to `<file>.tmp` in the same
+directory and are then moved into place with `fs.renameSync`. A crash therefore
+leaves either the old object or the new object. Immutable lifecycle receipts use
+fresh ids and never intentionally replace an existing receipt.
+
+JSONL diagnostic streams are the exception: they append directly. A crash can
+leave one truncated final line; readers must skip that line. These streams are
+telemetry, not ownership or completion truth.
 
 If you find a stray `*.tmp` file, a write was interrupted. It is safe to delete.
 
@@ -46,7 +56,7 @@ release can migrate rather than guess.
 
 **Timestamps** are ISO 8601 UTC strings, for example `2026-07-31T18:04:11.512Z`.
 
-**Identifiers** are prefixed and sortable-ish: `ses_`, `bc_`, `ckpt_`, `rem_`,
+**Identifiers** are prefixed and sortable-ish: `ses_`, `bc_`, `ckpt_`, `rem_`, `wr_`, `tr_`,
 followed by a timestamp-derived component and a short random suffix. Treat them as
 opaque strings.
 
@@ -373,6 +383,38 @@ Checkpoints are never mutated after write. `/checkpoint clear` deletes them.
 
 ---
 
+## workers/&lt;parent-session&gt;/&lt;worker&gt;/
+
+Native Codex and Claude workers keep their runtime-native identity and control
+plane. Autocache stores three local artifacts without creating a second
+breadcrumb owner:
+
+- `start_<receipt-id>.json` - immutable start receipt with `worker_id`,
+  `worker_type`, parent `session_id`, and the breadcrumb/chain head at start
+- `stop_<receipt-id>.json` - immutable final receipt with the same lineage, the
+  chain head at stop, capped `final_message`, and transcript path (not contents)
+- `events.jsonl` - child tool metadata for this worker only; write calls include
+  target paths but never tool output or file contents
+
+The latest stop receipt per worker is pending until a lead-owned breadcrumb step
+contains its exact `[worker:<receipt-id>]` marker. The marker means the lead
+reviewed and incorporated the receipt. A fork made while a worker runs does not
+orphan the result: the stop receipt retains both the original and current head.
+
+These files do not spawn, steer, wait for, cancel, approve, or stop a worker.
+Those actions remain native to the host.
+
+---
+
+## teams/&lt;parent-session&gt;/&lt;team&gt;/
+
+Claude native-team `TaskCreated`, `TaskCompleted`, and `TeammateIdle` events are
+immutable JSON receipts. They carry native team/task/teammate names plus the
+current breadcrumb lineage. Claude's own task list and mailbox remain the
+operational source; Autocache records continuity and does not edit them.
+
+---
+
 ## state/self_state.json
 
 The agent's running notes about itself for the current arc - focus, working
@@ -534,7 +576,11 @@ reader rather than treated as corruption.
 
 ## What is never written here
 
-No file contents from your repository. No prompt text or model output. No
-credentials, tokens, or environment variables. No network destinations, because
-there are no network calls. If you find any of that in your state directory, that is
+No file contents from your repository, generic user-prompt capture, full model
+transcript, credentials, tokens, or environment variables. A native worker stop
+receipt does store that worker's final assistant message, capped at 4,000
+characters by default, because that is the handoff result the lead must
+reconcile. A Claude native-team receipt stores its task subject and a task
+description capped at 1,000 characters. No network destinations are written
+because there are no network calls. Anything beyond those documented fields is
 a security bug: see [SECURITY.md](../SECURITY.md).
