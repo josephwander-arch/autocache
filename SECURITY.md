@@ -23,7 +23,8 @@ Knowing the blast radius is most of the analysis, so here it is in full.
 
 ### It reads
 
-- The JSON payload the harness hands each hook on stdin: session id, working
+- The JSON payload the harness hands each hook on stdin, or the explicit arguments
+  supplied to an AutoCache MCP tool: session id, working
   directory, event name, tool name, tool input, tool response, prompt text for
   `UserPromptSubmit`, and a transcript path.
 - Its own state under `~/.autocache/` (or `AUTOCACHE_HOME`).
@@ -35,15 +36,18 @@ Knowing the blast radius is most of the analysis, so here it is in full.
 - Your repository. There is no file scan and no source ingestion.
 - The transcript. `transcript_path` arrives in the payload and is deliberately never
   opened.
-- Environment variables other than `AUTOCACHE_HOME`, `HOME`, and `USERPROFILE`.
+- Environment variables other than the documented AutoCache scope/home settings,
+  `HOME`, `USERPROFILE`, and local-bridge bind/auth settings.
 - Credentials, tokens, keychains, or config belonging to any other tool.
 
 ### It writes
 
 Only under `~/.autocache/` (or `AUTOCACHE_HOME`). Nothing else on the system is
-created or modified, ever - no temp files elsewhere, no lock files, no registry keys,
-no shell profile edits. Every write goes to `<file>.tmp` in the same directory and is
-then moved into place with `fs.renameSync`.
+created or modified by runtime operations - no temp files elsewhere, no lock files,
+no registry keys, no shell profile edits. Structured JSON replacement goes to
+`<file>.tmp` in the same directory and is then moved into place with
+`fs.renameSync`. Append-only JSONL writes directly and may end with one truncated
+final line after interruption; readers retain all earlier valid lines.
 
 Recorded there: session metadata and findings you typed, breadcrumb names and steps
 (tool name and target, not payloads), checkpoints including git branch and short head,
@@ -52,13 +56,14 @@ self-state notes, scratch tags, reminders, and an event log.
 **Not recorded:** file contents, prompt text, model output, tool responses,
 credentials, tokens, or environment variables.
 
-### It never sends anything anywhere
+### It makes no outbound product or telemetry calls
 
-There are no network calls in any hook or adapter. No HTTP, no DNS, no sockets.
-Telemetry is off by default in `config.json` and there is no endpoint for it to reach
-even if the flag were flipped. If a future release ever adds one, it will be opt-in,
-documented, and announced in the changelog before it ships. Autocache has zero npm
-dependencies, so there is no transitive package that could add a call behind your back.
+There are no network calls in any native hook. The optional local-host bridge accepts
+MCP over stdio or Streamable HTTP; HTTP binds loopback by default, and a non-loopback
+bind requires an explicit bearer token. It does not call an AutoCache service, upload
+state, resolve a remote API, or emit telemetry. Native hooks have zero dependencies;
+the bridge's official MCP/HTTP dependencies are isolated, pinned, and locked under
+`adapters/local-hosts/mcp-server/`.
 
 ## Threat model
 
@@ -70,7 +75,9 @@ dependencies, so there is no transitive package that could add a call behind you
   blocks a tool call. CI has a dedicated job that pipes malformed input, empty input,
   a missing state root, an unwritable one, and corrupt state into every hook and
   asserts the exit code.
-- **Leaking your work off the machine.** By having no mechanism that could.
+- **Leaking your work to an AutoCache service.** No such service or outbound path is
+  configured. A user who deliberately exposes the HTTP bridge beyond loopback owns
+  that network boundary and must configure its bearer token.
 
 ### What it does not defend against
 
@@ -88,12 +95,17 @@ dependencies, so there is no transitive package that could add a call behind you
 
 ## For reviewers auditing this yourself
 
-Everything is readable source: hooks and adapters are plain Node with no build step and
-no dependencies. The claims above are checkable with a grep.
+Everything is readable source: native hooks/adapters are plain dependency-free Node;
+the optional bridge has a readable manifest and lockfile. The claims above are
+checkable with source inspection and the transport tests.
 
 ```sh
-# no network
-grep -rnE "require\('(http|https|net|dgram|tls)'\)|fetch\(|XMLHttpRequest" hooks/ adapters/
+# no network in native hooks
+grep -rnE "require\('(http|https|net|dgram|tls)'\)|fetch\(|XMLHttpRequest" hooks/
+
+# bridge dependencies and transport boundary
+cat adapters/local-hosts/mcp-server/package.json
+npm --prefix adapters/local-hosts/mcp-server test
 
 # no child processes beyond the documented git read
 grep -rn "child_process" hooks/ adapters/
@@ -110,9 +122,9 @@ reporting.
 
 ## Supported versions
 
-v0.1.0 is pre-1.0. Only the latest release receives fixes. There are no backports.
+AutoCache is pre-1.0. Only the latest release receives fixes. There are no backports.
 
 | Version | Supported |
 |---|---|
-| 0.1.x | Yes |
+| 0.4.x | Yes |
 | older | No |

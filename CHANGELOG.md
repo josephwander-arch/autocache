@@ -11,6 +11,35 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+### Added
+
+- A native Grok Build distribution with a `.grok-plugin` manifest,
+  shared skills/commands/agents, a seven-event Grok hook map, and
+  camelCase lifecycle-envelope normalization. Grok keeps native worker control;
+  AutoCache persists continuity and immutable worker receipts.
+- One generic local-host MCP distribution with profiles for LM Studio, Jan, and
+  Open WebUI. Ollama is documented as the model engine behind an MCP-capable host,
+  not as a plugin client. The bridge uses the stable split MCP TypeScript SDK v2
+  packages in an isolated, locked Node 20+ package.
+- Cross-surface packaging and proof documentation that keeps source, installation,
+  loader discovery, real invocation, activation, and enforcement separate.
+
+### Changed
+
+- Removed the four duplicated read-only Grok skill copies. Grok Build now consumes
+  the shared root skills directly, preventing a second procedure fork.
+- Clarified that AutoCache's paid boundary is knowledge capability, not whether a
+  local transport happens to use MCP. The generic bridge provides continuity tools;
+  extraction, retrieval, indexing, propagation, consolidation, and eval remain
+  Autonomous-only.
+
+### Fixed
+
+- Grok child lifecycle and tool events now normalize `sessionId`, `subagentId`,
+  `subagentType`, `toolName`, and related top-level fields. Bounded parent lookup
+  preserves child isolation; unknown or ambiguous parents cannot mutate the lead
+  fork-chain head.
+
 ## [0.4.0] - 2026-08-12
 
 ### Added

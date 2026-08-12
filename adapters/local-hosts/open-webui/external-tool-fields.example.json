@@ -1,0 +1,9 @@
+{
+  "template_only": true,
+  "name": "AutoCache Local Continuity",
+  "type": "MCP (Streamable HTTP)",
+  "url_same_host": "http://127.0.0.1:3210/mcp",
+  "url_open_webui_in_docker": "http://host.docker.internal:3210/mcp",
+  "auth": "Bearer",
+  "bearer_token": "use-the-same-value-as-AUTOCACHE_MCP_TOKEN"
+}

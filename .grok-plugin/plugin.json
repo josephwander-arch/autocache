@@ -1,0 +1,23 @@
+{
+  "name": "autocache",
+  "version": "0.4.0",
+  "description": "Local session continuity for Grok Build. Native Grok hooks capture work state and worker receipts while Grok keeps control of execution.",
+  "author": {
+    "name": "AutoCache",
+    "email": "hello@autocache.ai"
+  },
+  "homepage": "https://autocache.ai",
+  "repository": "https://github.com/josephwander-arch/autocache",
+  "license": "MIT",
+  "keywords": [
+    "continuity",
+    "breadcrumbs",
+    "sessions",
+    "handoffs",
+    "local-first"
+  ],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "agents": "./agents/",
+  "hooks": "./adapters/grok/hooks/hooks.json"
+}

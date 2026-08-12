@@ -409,7 +409,7 @@ Checkpoints are never mutated after write. `/checkpoint clear` deletes them.
 
 ## workers/&lt;parent-session&gt;/&lt;worker&gt;/
 
-Native Codex and Claude workers keep their runtime-native identity and control
+Native Codex, Claude, and Grok Build workers keep their runtime-native identity and control
 plane. Autocache stores three local artifacts without creating a second
 breadcrumb owner:
 
@@ -605,6 +605,8 @@ transcript, credentials, tokens, or environment variables. A native worker stop
 receipt does store that worker's final assistant message, capped at 4,000
 characters by default, because that is the handoff result the lead must
 reconcile. A Claude native-team receipt stores its task subject and a task
-description capped at 1,000 characters. No network destinations are written
-because there are no network calls. Anything beyond those documented fields is
-a security bug: see [SECURITY.md](../SECURITY.md).
+description capped at 1,000 characters. No network destinations, authorization
+headers, or host credentials are written. Native hooks make no network calls; the
+optional local-host bridge transports explicit MCP requests and persists only the
+same documented state fields. Anything beyond those fields is a security bug: see
+[SECURITY.md](../SECURITY.md).

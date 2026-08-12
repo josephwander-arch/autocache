@@ -4,7 +4,8 @@ The landing page. One file: `index.html`.
 
 Inline CSS, inline JS, an inline data-URI favicon. **No external requests of any
 kind** - no CDN, no web fonts, no analytics, no image files. Nothing to build,
-nothing to install, no dependencies.
+no hosted service. Native plugins are dependency-free; the optional local-host MCP
+bridge keeps its official SDK dependencies isolated and locked.
 
 ```
 site/

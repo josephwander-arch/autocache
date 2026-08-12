@@ -68,6 +68,19 @@ try {
 
   if (cfg.enabled === false || cfg.quiet === true) process.exit(0);
 
+  // Native workers remain owned by the host runtime. Never let a child
+  // PreToolUse event mutate the lead arc's nudge/checkpoint caches. Codex does
+  // not currently guarantee agent_id on every ordinary child tool event, so
+  // an untagged event is also treated as ambiguous while that parent session
+  // has an active worker. The tradeoff is intentionally conservative: lead
+  // advice pauses during that ambiguous window instead of misattributing a
+  // child action to the lead.
+  const worker = store.workerIdentity(input);
+  const parentSessionId = typeof input.session_id === 'string' ? input.session_id : '';
+  const ambiguousDuringWorker = !worker && parentSessionId
+    && store.activeWorkerIds(parentSessionId).length > 0;
+  if (worker || ambiguousDuringWorker) process.exit(0);
+
   const toolName = typeof input.tool_name === 'string' ? input.tool_name : '';
   const toolInput = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
 

@@ -24,22 +24,29 @@ The upgrade trigger is designed in, not bolted on: Autocache users accumulate
 breadcrumbs and session records and eventually ask *"can it learn from these?"*
 That question **is** the paid tier.
 
-## Hard architectural decision: v1 ships NO binary
+## Hard architectural decision: one file-based core, optional transports
 
-Autocache v1 is **pure files** — hooks, skills, commands, and JSON state. No MCP
-server, no compiled binary, no code signing, no install step beyond dropping a
-directory. Rationale:
+AutoCache's native coding-agent distributions are **pure files** - hooks, skills,
+commands, agents, and JSON state. They ship no compiled binary, daemon, code-signing
+step, or runtime dependency beyond Node. A generic local-host distribution may run
+the same core behind a local MCP bridge because those hosts need a tool transport,
+not because AutoCache has become a knowledge server. Rationale:
 
 1. Zero install friction is the entire point of a free tier.
 2. A binary needs signing on Windows; the signing chain is a real blocker.
-3. Hooks + local JSON cover 100% of the free feature set. Nothing is compromised.
-4. It makes the paid boundary *structural*: Autonomous ships the MCP server, and
-   retrieval genuinely cannot be done with hooks and JSON.
+3. Hooks + local JSON cover 100% of the native free feature set. MCP tools expose
+   the same bounded operations to hosts without a compatible lifecycle-hook API.
+4. The paid boundary is capability, not transport: Autonomous adds extraction,
+   retrieval, indexes, propagation, consolidation, and eval. The AutoCache bridge
+   adds none of those.
 
-Runtime: **Node.js**. Not Python. Claude Code ships with Node; `python3` does not
+Runtime: **Node.js 20+**. Not Python. Claude Code ships with Node; `python3` does not
 reliably resolve on Windows (a known trap — `python3` is not on PATH under many
 Windows Python installs, and the hook silently fails open). Every hook must run
-under plain `node` with **zero npm dependencies** — Node standard library only.
+under plain `node` with **zero npm dependencies** - Node standard library only.
+The optional local-host bridge isolates and locks the official MCP SDK packages
+under `adapters/local-hosts/mcp-server/`; those packages are never loaded by the
+Claude, Codex, or Grok hook paths.
 
 ## State layout
 
@@ -207,40 +214,60 @@ continuation packet without pulling the whole transcript into the main context.
 
 ## Surface: Codex
 
-Codex has real directories at `~/.codex/`: `skills/`, `hooks/`, `rules/`,
-`agents/`, `automations/`, `plugins/`. It is **not** the Claude Code plugin format.
-Ship an installer that materializes the same behavior into those directories:
+Codex has a first-class `.codex-plugin/plugin.json` for visible skills. Its current
+runtime does not prove plugin-bundled hooks, so the companion adapter materializes
+the remaining Codex-owned behavior into `~/.codex/`:
 
-- `~/.codex/skills/autocache-*/SKILL.md` — same skill bodies
+- plugin-owned `skills/autocache-*/SKILL.md` - same shared skill bodies
 - `~/.codex/hooks/` — same Node scripts, registered per Codex's hook config
 - `~/.codex/rules/autocache.md` — the always-on behavioral rules
 
-The Node hook scripts and the `~/.autocache/` state are **shared verbatim** across
-surfaces. That is the whole point: one state directory, many front ends. A session
-started under Claude Code must be resumable under Codex.
+The Node hook scripts and state **format** are shared verbatim across surfaces.
+Each surface uses its own scoped store under `~/.autocache/stores/`; deliberate
+cross-surface ownership moves through the shared-tag bridge and fork chain.
 
-Codex and Claude remain the worker control plane. Autocache consumes only stable
+Codex, Claude, and Grok remain the worker control plane. AutoCache consumes only stable
 native lifecycle identity (`agent_id`, `agent_type`, parent `session_id`) and
 never implements its own spawn, steering, wait, cancellation, permission, or
 worktree scheduler. A bounded worker return contributes to the current chain
 head; only a top-level ownership transfer creates a fork.
 
-## Surface: Grok
+## Surface: Grok Build
 
-Grok is a skill/prompt surface, not a hook surface. Ship markdown only, modeled on
-`C:\CPC\grok-web-skills\` (directories of skill markdown). No hooks, no state
-mutation from Grok itself — Grok **reads** `~/.autocache/` and narrates; it does
-not write. Say this plainly in the docs; a surface that silently can't write is
-the failure mode.
+Grok Build has native plugins, hooks, skills, commands, agents, and subagents.
+`.grok-plugin/plugin.json` points to the shared root components and a Grok-specific
+seven-event hook map. The common stdin reader normalizes Grok's camelCase event
+envelope and `subagentId`/`subagentType` fields without changing nested tool input.
+Claude-only team events are not registered. Grok keeps native execution control;
+AutoCache records continuity and worker receipts.
+
+Plain grok.com chat without local plugin/filesystem access remains a hookless chat
+surface and cannot be represented as an installed local plugin.
+
+## Surface: generic local-model hosts
+
+`adapters/local-hosts/` ships one MCP bridge with host profiles for LM Studio, Jan,
+and Open WebUI. It supports stdio for local desktop clients and Streamable HTTP for
+Open WebUI. The bridge exposes explicit resume, breadcrumb, checkpoint, handoff,
+and reminder tools; it does not claim automatic lifecycle capture where the host
+does not emit lifecycle events.
+
+Ollama is a model engine, not the plugin client. It is supported behind Open WebUI
+or another MCP-capable host rather than presented as a fourth host contract.
 
 ## GitHub repository
 
-Public repo `josephwander-arch/autocache`. Must contain:
+Repository `josephwander-arch/autocache` remains private until separately promoted.
+It must contain:
 
 - `README.md` — what it is, the free/paid line, 30-second install, screenshot slot
 - `LICENSE` — MIT
 - `.claude-plugin/marketplace.json` — so `/plugin marketplace add josephwander-arch/autocache` works
-- `install.sh` / `install.ps1` — one-liner installers for the non-Claude-Code surfaces
+- `.codex-plugin/plugin.json` - first-class Codex plugin metadata
+- `.grok-plugin/plugin.json` - native Grok distribution, installable directly
+  from the repository
+- `adapters/local-hosts/` - generic MCP bridge and three host profiles
+- `install.sh` / `install.ps1` - Codex adapter installers
 - `docs/` — install per surface, state format, hook reference, FAQ, upgrade path
 - `.github/workflows/ci.yml` — lint hooks with `node --check`, validate every JSON against its schema, run the hook test fixtures
 - `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`

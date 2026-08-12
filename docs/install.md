@@ -1,11 +1,13 @@
 # Install
 
-Autocache v1 is pure files: hooks, skills, commands, and JSON state. There is no
-MCP server, no compiled binary, and no code signing step. Installing is dropping a
-directory in the right place.
+AutoCache's Claude Code, Codex, and Grok Build distributions are pure files: hooks,
+skills, commands, agents, and JSON state. The optional generic local-host
+distribution adds a Node MCP bridge; there is no compiled binary or code-signing
+step.
 
-**Requirements:** Node.js (any currently supported release). Nothing else. Zero npm
-dependencies - Node standard library only. Windows, macOS, and Linux.
+**Requirements:** Node.js 20 or newer. The three native coding-agent distributions
+use only the Node standard library. The optional MCP bridge keeps its official SDK
+dependencies isolated in its own locked package. Windows, macOS, and Linux.
 
 Autocache does not use Python. `python3` does not reliably resolve on Windows, and a
 hook that silently fails because its interpreter is missing is exactly the failure
@@ -95,18 +97,57 @@ from the Codex hook config, and `~/.codex/rules/autocache.md`. Your state under
 
 ## Grok
 
-**Grok is read-only.** This is a real limitation, stated plainly rather than papered
-over: Grok is a skill and prompt surface, not a hook surface. It has no hook events
-to fire on and no sanctioned local write path. Grok reads `~/.autocache/` and
-narrates what it finds. It does not create sessions, does not append breadcrumb
-steps, and does not write checkpoints.
+Grok Build loads AutoCache as a native plugin with skills, commands, agents, and
+lifecycle hooks. It sends camelCase event fields; the adapter normalizes only the
+top-level envelope and routes the event to the same hook implementation used by
+Claude Code and Codex.
 
-Install: copy the markdown skill directories from `skills/` into your Grok skill
-location, the same way you would any other Grok skill set (modeled on the layout in
-`C:\CPC\grok-web-skills\` - directories of skill markdown, no hooks).
+Install directly from the private repository (your Git credentials must have
+access):
 
-Use Grok for reading an arc back to yourself, drafting a handoff from existing state,
-or reviewing what a session recorded. Do the writing from Claude Code or Codex.
+```sh
+grok plugin install josephwander-arch/autocache --trust
+```
+
+Then reload plugins or start a new session. Verify source shape with
+`grok plugin validate .` and loader discovery with `grok inspect --json`. A real
+new-session event is required to prove invocation. Trust is separate from enablement;
+without trust, executable hooks remain blocked.
+
+This repository is the plugin source, not a Grok marketplace index. A future
+marketplace should live in a separate index repository and point at an exact
+AutoCache commit; a repo-root local marketplace entry would resolve back to an
+empty plugin path.
+
+Plain grok.com chat is not Grok Build. Without local plugin and filesystem access it
+can read a pasted summary but cannot run this distribution.
+
+---
+
+## Generic local-model hosts
+
+One MCP bridge serves three supported host profiles:
+
+| Host | Transport | Profile |
+|---|---|---|
+| LM Studio | stdio | `adapters/local-hosts/lm-studio/` |
+| Jan | stdio or Streamable HTTP | `adapters/local-hosts/jan/` |
+| Open WebUI 0.6.31+ | Streamable HTTP | `adapters/local-hosts/open-webui/` |
+
+Install the bridge's pinned dependencies:
+
+```sh
+cd adapters/local-hosts/mcp-server
+npm ci --ignore-scripts
+```
+
+Then copy the selected host's configuration template and replace its repository
+path. The MCP bridge exposes explicit resume, breadcrumb, checkpoint, handoff, and
+reminder tools. It does not claim automatic lifecycle capture on a host that does
+not expose lifecycle events.
+
+Ollama is supported as a model backend, not as a fourth plugin client. Use it behind
+Open WebUI or another MCP-capable host; see `adapters/local-hosts/ollama/`.
 
 ---
 
@@ -161,7 +202,9 @@ that recorded nothing worth restoring.
 
 - Claude Code: `/plugin uninstall autocache`
 - Codex: remove the installed skills, rules, and hook registrations listed above.
-- Grok: delete the copied skill markdown.
+- Grok Build: `grok plugin uninstall autocache --confirm`
+- Local-model hosts: remove the MCP server entry; optionally remove
+  `adapters/local-hosts/mcp-server/node_modules/`.
 
 Then, if you want the data gone too:
 

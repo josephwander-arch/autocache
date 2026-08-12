@@ -1,75 +1,64 @@
-# Autocache adapter: Grok
+# AutoCache adapter: Grok Build
 
-## Grok reads. Grok does not write. Read this before anything else.
+Grok Build has native plugins, lifecycle hooks, skills, commands, agents, and
+subagents. This adapter uses that machinery directly. Grok still owns worker
+creation, messaging, permissions, cancellation, and execution; AutoCache records
+the durable continuity envelope around it.
 
-Grok is a **skill and prompt surface**, not a hook surface. It has no hook events, no
-installer, and on the web surface no filesystem access at all. Therefore:
+This replaces the former read-only prompt adapter. The old four duplicated Grok
+skill copies were removed because `.grok-plugin/plugin.json` points to the same
+root `skills/`, `commands/`, and `agents/` used by the other distributions.
 
-> **Grok can read and narrate `~/.autocache/`. Grok cannot change it.**
->
-> Nothing Grok says has been saved. No session was started, no breadcrumb was
-> stepped, no checkpoint was written, no reminder was added. If a change is to
-> reach `~/.autocache/`, a human or a hook surface (Claude Code, Codex) has to
-> make it.
+## What is Grok-specific
 
-This is stated first, loudly, and repeated inside every skill in this directory on
-purpose. A surface that silently cannot write is exactly the failure mode Autocache
-exists to prevent: you believe your work arc was recorded, you come back tomorrow,
-and there is nothing there. An honest read-only narrator is useful. A narrator that
-sounds like a writer is worse than nothing.
+- `.grok-plugin/plugin.json` declares the shared component paths and this adapter's
+  hook registration file.
+- `hooks/hooks.json` registers only Grok-supported AutoCache events and tags every
+  invocation `--surface=grok`.
+- Grok sends camelCase hook fields such as `sessionId`, `toolName`,
+  `subagentId`, and `lastAssistantMessage`. `hooks/lib/store.js` copies those
+  top-level fields into the shared snake_case contract without changing nested
+  tool input.
+- Grok child tool events identify the child session but omit its parent. AutoCache
+  binds the child to one active start receipt with a bounded lookup. An unknown or
+  ambiguous parent is isolated under `workers/unknown-parent/`; it never mutates
+  the lead breadcrumb.
+- Claude-only `TaskCreated`, `TaskCompleted`, and `TeammateIdle` events are not
+  registered for Grok.
 
-Every skill here therefore ends its output the same way - by handing you the exact
-text or command to run somewhere that can actually persist it.
+## Install from the private GitHub repository
 
-## What Grok is genuinely good for here
-
-- Reading a pasted state dump and telling you, in plain language, where you left off.
-- Turning a long messy session into a continuation packet you can paste into
-  Claude Code or Codex.
-- Reviewing a breadcrumb trail and telling you which step is actually unfinished.
-- Drafting the summary text that a writing surface will then persist.
-
-## Installing
-
-There is nothing to install and nothing to run. These are markdown skill bodies.
-
-- **Grok with a custom-skills or project-instructions surface**: create one entry per
-  directory here, using the `name` and `description` from the file's YAML frontmatter
-  and the body as the instruction text.
-- **Plain chat**: paste the contents of the relevant `SKILL.md` at the top of the
-  conversation, then paste your state dump under it.
-
-## Getting state in front of Grok
-
-Grok cannot open your files, so you produce a dump and paste it. Both commands print
-a bounded digest, never the whole directory.
-
-PowerShell (Windows):
-
-```powershell
-$root = if ($env:AUTOCACHE_HOME) { $env:AUTOCACHE_HOME } else { Join-Path $HOME '.autocache' }
-Get-Content (Join-Path $root 'breadcrumbs/active.json') -ErrorAction SilentlyContinue
-Get-Content (Join-Path $root 'sessions/index.json')     -ErrorAction SilentlyContinue
-Get-Content (Join-Path $root 'state/self_state.json')   -ErrorAction SilentlyContinue
-Get-Content (Join-Path $root 'reminders.json')          -ErrorAction SilentlyContinue
-```
-
-POSIX (macOS, Linux, Git Bash, WSL):
+Your Git credentials must already have access to the private repository.
 
 ```sh
-root="${AUTOCACHE_HOME:-$HOME/.autocache}"
-cat "$root/breadcrumbs/active.json" "$root/sessions/index.json" \
-    "$root/state/self_state.json"  "$root/reminders.json" 2>/dev/null
+grok plugin install josephwander-arch/autocache --trust
 ```
 
-It is plain JSON. Read it yourself before you paste it - that is the point of keeping
-state in files you own.
+The plugin is disabled until enabled, and executable components remain blocked
+until trusted. After installation, reload the Plugins tab or start a new session.
 
-## Boundary
+This repository is the plugin source, not a Grok marketplace index. If a catalog
+is added later, keep it in a separate index repository and point its remote entry
+at an exact AutoCache commit. Do not add a repo-root local marketplace entry: its
+plugin path is empty and Grok refuses to install it.
 
-Autocache is the free tier: sessions, breadcrumbs, checkpoints, self-state, scratch
-tags, local reminders. It has no knowledge base, no extraction, no retrieval, no
-index, no consolidation, no context budgeting, no learning, no eval. Grok must not
-offer to simulate any of those from the pasted state.
+## Verify without installing
 
-Autocache remembers your work. Autonomous remembers your knowledge.
+From a checkout:
+
+```sh
+grok plugin validate .
+```
+
+Validation proves the package shape. After installation and a plugin reload or new
+session, run `grok inspect --json` from a target project; that command proves loader
+discovery and does not accept a `--plugin-dir` argument. A real new-session event is
+still required to prove invocation; a deliberate blocking probe would be required
+to prove enforcement. AutoCache hooks are continuity observers and fail open, so
+they do not claim policy enforcement.
+
+## Web Grok is different
+
+This adapter is for Grok Build, the local coding-agent runtime. A plain grok.com
+chat without local plugin/filesystem access can still read a pasted AutoCache
+summary, but it cannot run this plugin or write local state.

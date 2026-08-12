@@ -12,19 +12,24 @@ of how useful it is.
    unwritable `AUTOCACHE_HOME`, corrupt JSON - all exit 0 and do nothing. A hook may
    never block, deny, crash, or hang a session. A continuity tool that breaks the
    session it exists to protect is worse than no tool.
-2. **Every state write is atomic.** Write `<file>.tmp` in the same directory, then
-   `fs.renameSync`. Never rewrite in place. A valid-but-truncated state file is the
-   exact failure this product exists to prevent.
-3. **Zero dependencies.** Node standard library only. No `package.json` dependencies,
-   no lockfile, no vendored modules, no build step.
+2. **Structured state replacement is atomic.** Write `<file>.tmp` in the same
+   directory, then `fs.renameSync`. Append-only JSONL is not an atomic whole-file
+   replacement; readers must ignore only a malformed final line and keep earlier
+   valid records.
+3. **The native core has zero dependencies.** Hooks and native adapters use only the
+   Node standard library. The optional local-host MCP bridge isolates its official
+   SDK dependencies and committed lockfile under `adapters/local-hosts/mcp-server/`.
 4. **Node, never Python.** `python3` does not reliably resolve on Windows, and a hook
    whose interpreter is missing fails silently. Node is present wherever these agents run.
 5. **Cross-platform.** Windows, macOS, Linux. Build paths with `path.join`. Never
    hardcode a separator. Quote `"${CLAUDE_PLUGIN_ROOT}"` in every hook command, because
    Windows plugin paths contain spaces.
-6. **One state root.** `AUTOCACHE_HOME` if set, otherwise `path.join(os.homedir(), '.autocache')`.
-   Nothing is written outside that tree - not a temp file, not a lock, not a log.
-7. **No network calls.** None, anywhere. Telemetry is off by default and has no endpoint.
+6. **One state base, scoped stores.** `AUTOCACHE_HOME` if set, otherwise
+   `path.join(os.homedir(), '.autocache')`; each surface writes its own store under
+   `stores/<scope>`. Nothing is written outside that base.
+7. **No outbound network or telemetry.** Hooks make no network calls. The optional
+   MCP bridge may accept local stdio or HTTP requests; it must bind loopback by
+   default and require authentication before any non-loopback bind.
 8. **No emoji in files.** Chat only. Emoji are never written into any file in this
    repository - downstream tools that read and rewrite them mangle encodings, and hook
    output lands in terminals with no reliable font coverage. CI enforces this.
@@ -39,31 +44,31 @@ of how useful it is.
 
 Sessions, breadcrumbs, checkpoints, self-state, the scratch bag, local reminders,
 health and error reporting, config backup and validation, and the surface adapters
-that carry those to Claude Code, Codex, and Grok. Single machine, single work arc.
+that carry those to Claude Code, Codex, Grok Build, and supported local-model hosts.
+Single machine, one top-level work arc per scoped store.
 
 Bug fixes to the above, cross-platform correctness, better restore output, and better
 docs are all welcome without asking first.
 
 ## What is out of scope
 
-Anything requiring an index, a corpus, or a running process between invocations. That
-is Autonomous, and the split is architectural: a hook is a short-lived one-shot
-process with no shared state, which is the opposite of what retrieval needs. See
-[docs/upgrade.md](docs/upgrade.md).
+Anything requiring an index, corpus, extraction, retrieval, propagation, or learning
+loop. That is Autonomous. A host-required MCP transport may stay running, but it may
+only expose the existing continuity state operations. See [docs/upgrade.md](docs/upgrade.md).
 
-Also out: adding a dependency, adding a binary, adding a build step, adding a network
-call. If your idea needs one of those, open an issue before writing code - the answer
-is probably no, and finding that out after the work is done helps nobody.
+Also out for the native core: adding a dependency, binary, build step, or network
+call. Transport dependencies belong only in the isolated local-host package.
 
 ## Setup
 
 ```sh
 git clone https://github.com/josephwander-arch/autocache.git
 cd autocache
-node --version    # any currently supported release
+node --version    # 20 or newer
 ```
 
-That is the whole setup. There is nothing to install.
+That is the whole native-core setup. For local-host MCP work, run `npm ci` inside
+`adapters/local-hosts/mcp-server/`.
 
 ## Running the checks locally
 
@@ -72,6 +77,7 @@ node .github/scripts/check-syntax.cjs    # node --check every .js under hooks/ a
 node .github/scripts/validate-json.cjs   # every .json parses; manifests have the right shape
 node .github/scripts/fail-open.cjs       # the one that matters
 node .github/scripts/no-emoji.cjs        # emoji are chat-only
+cd adapters/local-hosts/mcp-server && npm ci && npm test
 ```
 
 `fail-open.cjs` pipes malformed stdin, empty stdin, a nonexistent `AUTOCACHE_HOME`, an

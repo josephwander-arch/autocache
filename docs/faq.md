@@ -27,10 +27,10 @@ arrives in the hook payload and is deliberately not read.
 
 ### Does it phone home?
 
-No. There are no network calls in any hook. Telemetry is off by default in
-`config.json`, and there is no endpoint for it to reach even if you turned the flag
-on. If a future release ever adds one it will be opt-in, documented, and announced in
-the changelog before it ships.
+No. There are no outbound product or telemetry calls, and native hooks use no
+network. The optional local-host bridge accepts MCP over stdio or loopback HTTP so
+your chosen host can call it; it does not upload state or contact AutoCache. A
+non-loopback HTTP bind requires an explicit bearer token.
 
 ### Where is my data and how do I delete it?
 
@@ -80,7 +80,7 @@ one lead and one top-level breadcrumb. Stable child identities get isolated even
 streams and immutable result receipts. They do not own, fork, or step the lead's
 breadcrumb; the lead verifies and reconciles each result.
 
-### Does Autocache replace Codex or Claude agent teams?
+### Does AutoCache replace Codex, Claude, or Grok agent teams?
 
 No. Native machinery still creates, steers, waits for, cancels, controls permissions for, and
 stops workers. Autocache adds durable lifecycle receipts, isolates identified
@@ -88,18 +88,20 @@ child tool events from the lead arc, and keeps unreconciled results visible acro
 session boundaries. A bounded worker return stays on the same breadcrumb head;
 only a real top-level ownership transfer uses the fork chain.
 
-### Can I use it with Claude Code, Codex, and Grok at the same time?
+### Can I use it with Claude Code, Codex, and Grok Build at the same time?
 
-Claude Code and Codex share the state directory verbatim - that is the design. A
-session started under one is resumable under the other. Grok reads the same
-directory but does not write to it.
+Yes. They share one state format but use per-surface scoped stores, which prevents
+two top-level sessions from competing for one active breadcrumb. The shared-tag
+bridge and fork chain carry deliberate ownership transitions across surfaces.
+Grok Build has native hooks and writes its own scoped continuity state just like
+the other coding-agent runtimes.
 
-### Why can Grok only read?
+### What about plain grok.com chat?
 
-Grok is a skill and prompt surface, not a hook surface. There are no hook events to
-fire on and no sanctioned local write path. Rather than ship something that appears
-to record and silently does not, Grok is documented as read-only: it narrates the
-state that the other surfaces wrote.
+The native plugin is for Grok Build, the local coding-agent runtime. A grok.com chat
+without local plugin and filesystem access cannot execute AutoCache hooks or write
+local state. It can still review a bounded summary you paste into the conversation,
+but that is not an installed or invoked plugin.
 
 ### How big does the state directory get?
 

@@ -1,6 +1,6 @@
 {
   "name": "autocache",
-  "version": "0.3.3+codex.20260812180004",
+  "version": "0.4.0+codex.20260812213606",
   "description": "Local session continuity for Codex. Skills and a zero-dependency CLI manage breadcrumbs; native Codex hooks are installed separately by the bundled adapter.",
   "author": {
     "name": "AutoCache",

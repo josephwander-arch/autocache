@@ -27,10 +27,11 @@ does not merge regardless of how useful the feature is.
 
 - [ ] **Fails open.** Every touched hook wraps its body in try/catch and ends every
       path in `process.exit(0)`. It cannot block, deny, crash, or hang a session.
-- [ ] **Atomic writes.** Every new state write goes to `<file>.tmp` and is then moved
-      into place with `fs.renameSync`. No in-place rewrites.
-- [ ] **Zero dependencies.** Node standard library only. No `package.json` dependencies,
-      no lockfile, no vendored modules.
+- [ ] **Durable writes.** Structured JSON replacement uses same-directory temp plus
+      rename. JSONL readers tolerate only a malformed final line.
+- [ ] **Core dependency boundary.** Native hooks/adapters use only Node standard
+      library. Any local-host MCP dependency stays isolated and locked under
+      `adapters/local-hosts/mcp-server/`.
 - [ ] **Node, not Python.** No `python3` anywhere - it does not reliably resolve on Windows.
 - [ ] **Cross-platform.** Paths built with `path.join`. No hardcoded separators. Verified
       on, or reasoned about for, Windows, macOS, and Linux.
@@ -38,7 +39,8 @@ does not merge regardless of how useful the feature is.
       Nothing is written outside that tree.
 - [ ] **Quoted plugin root.** Any new hook command quotes `"${CLAUDE_PLUGIN_ROOT}"` -
       Windows plugin paths contain spaces.
-- [ ] **No network calls.** None. Telemetry stays off by default.
+- [ ] **No outbound calls.** No product service or telemetry. Optional MCP HTTP is
+      loopback by default and authenticated before any non-loopback bind.
 - [ ] **No emoji in files.** Chat only. Never written into any file in this repository.
 - [ ] **No paid capability.** Does not implement, stub, tease, or imply free access to
       extraction, retrieval, index maintenance, knowledge-base writes with propagation,
@@ -56,3 +58,4 @@ does not merge regardless of how useful the feature is.
 - [ ] `docs/state-format.md` updated if any state file changed
 - [ ] `docs/hooks.md` updated if any hook input, output, or event changed
 - [ ] `CHANGELOG.md` updated under Unreleased
+- [ ] Local-host changes passed `npm ci` and `npm test` in their isolated package

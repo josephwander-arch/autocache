@@ -1,10 +1,10 @@
-# Autocache
+# AutoCache
 
 **Your agent stops forgetting what it was doing.**
 
-Free-tier session continuity for AI coding agents. Hooks capture the shape of your
-work as it happens, state persists as plain JSON on your own disk, and the next
-session restores it. No server, no binary, no npm dependencies, no account.
+Free-tier session continuity for AI coding agents. Native hooks or explicit MCP
+tools capture the shape of your work, state persists as plain JSON on your own
+disk, and the next session restores it. No account and no hosted service.
 
 [![CI](https://github.com/josephwander-arch/autocache/actions/workflows/ci.yml/badge.svg)](https://github.com/josephwander-arch/autocache/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -62,12 +62,35 @@ irm https://raw.githubusercontent.com/josephwander-arch/autocache/main/install.p
 
 ### Grok
 
-Grok is a prompt surface, not a hook surface. Copy the markdown skills from
-`skills/` into your Grok skill directory. Grok **reads** `~/.autocache/` and narrates
-what it finds; it does not write state. See [docs/install.md](docs/install.md).
+Grok Build has a first-class native plugin. It loads the shared skills, commands,
+agents, and lifecycle hooks through `.grok-plugin/plugin.json` while keeping full
+control of native worker execution.
+
+```sh
+grok plugin install josephwander-arch/autocache --trust
+```
+
+Reload plugins or start a new session, then verify loader discovery with
+`grok inspect --json`. Plain grok.com chat is a different, hookless surface.
+
+### Local-model hosts
+
+The generic distribution is one MCP bridge with tested profiles for LM Studio,
+Jan, and Open WebUI. Ollama is supported as the model engine behind one of those
+MCP-capable hosts; Ollama itself is not the plugin client.
+
+```sh
+cd adapters/local-hosts/mcp-server
+npm ci --ignore-scripts
+```
+
+Choose the host profile under `adapters/local-hosts/`. These hosts expose explicit
+continuity tools; they do not receive automatic lifecycle capture unless their own
+runtime supplies equivalent hooks.
 
 The Node hook scripts and the `~/.autocache/` state directory are shared verbatim
-across surfaces. A session started under Claude Code is resumable under Codex.
+across surfaces. A session started under Claude Code is resumable under Codex or
+Grok Build, and the same state is available through the local-host MCP bridge.
 
 ## What it stores, and where
 
@@ -144,7 +167,7 @@ paid tier: [docs/upgrade.md](docs/upgrade.md).
   session boundary. The name refers to caching *your work context* on disk, not to the
   API's token cache. The two are unrelated.
 - **It does not make the model smarter.** It restores context. That is all it does.
-- **It does not replace native agent teams.** Codex and Claude still spawn,
+- **It does not replace native agent teams.** Codex, Claude, and Grok still spawn,
   steer, wait for, and stop their workers. Autocache isolates identified child
   events, persists their return receipts, and leaves one durable top-level
   fork-chain owner.
@@ -157,12 +180,15 @@ paid tier: [docs/upgrade.md](docs/upgrade.md).
 
 ## Requirements
 
-Node.js (any currently supported release) and nothing else. Zero npm dependencies -
-Node standard library only. Windows, macOS, and Linux.
+Claude Code, Codex, and Grok Build require Node.js 20 or newer and use only the Node
+standard library at runtime. The optional generic MCP bridge keeps its official MCP
+SDK and HTTP dependencies isolated under `adapters/local-hosts/mcp-server/` with a
+committed lockfile. Windows, macOS, and Linux are supported.
 
 ## Docs
 
 - [Install per surface](docs/install.md)
+- [Four distributions and compatibility](docs/distributions.md)
 - [State format](docs/state-format.md)
 - [Hook reference](docs/hooks.md)
 - [FAQ](docs/faq.md)

@@ -15,8 +15,8 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Syntax. Autocache has zero npm dependencies, so `node --check` is the whole
-  # lint story - nothing to install, nothing to pin, nothing to break.
+  # Syntax. The native hook core has zero npm dependencies, so `node --check`
+  # covers it without installing the optional local-host MCP package.
   # ---------------------------------------------------------------------------
   syntax:
     name: node --check (${{ matrix.os }}, node ${{ matrix.node }})
@@ -33,20 +33,46 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      - name: Assert no dependencies crept in
+      - name: Assert native-core dependency boundary
         shell: bash
         run: |
           if [ -d node_modules ]; then
-            echo "FAIL: node_modules is committed. Autocache ships zero dependencies."
+            echo "FAIL: root node_modules is committed. Native core must stay dependency-free."
             exit 1
           fi
           if [ -f package-lock.json ] || [ -f yarn.lock ] || [ -f pnpm-lock.yaml ]; then
-            echo "FAIL: a lockfile is present. Autocache ships zero dependencies."
+            echo "FAIL: root lockfile is present. Dependencies belong only in adapters/local-hosts/mcp-server."
             exit 1
           fi
 
       - name: Syntax check every .js under hooks/ and adapters/
         run: node .github/scripts/check-syntax.cjs
+
+  local-host-mcp:
+    name: local-host MCP v2 (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['20', '22']
+    defaults:
+      run:
+        working-directory: adapters/local-hosts/mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: adapters/local-hosts/mcp-server/package-lock.json
+
+      - name: Install exact locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run stdio, Streamable HTTP, and safety regressions
+        run: npm test
 
   # ---------------------------------------------------------------------------
   # Every .json in the repository must parse, and the manifests that ship the
