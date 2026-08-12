@@ -5,7 +5,7 @@ allowed-tools: ["Bash", "Read", "Write"]
 
 # /remind
 
-Reminders live in `~/.autocache/reminders.json` and surface at the start of the next
+Reminders live in the scoped store (`~/.autocache/stores/<surface>/reminders.json`) and surface at the start of the next
 session and in `/resume`. They are local and passive - nothing fires a notification,
 nothing leaves the machine. A reminder is a note your future session will actually see.
 
@@ -49,7 +49,9 @@ const TAGS = [];                 // add: optional labels
 const TARGET = "";               // done | delete: the reminder id
 const SHOW_ALL = false;          // list: include completed
 
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const FILE = path.join(HOME, 'reminders.json');
 const now = new Date();
 const nowIso = now.toISOString();

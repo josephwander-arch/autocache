@@ -8,7 +8,7 @@ description: Reconstruct what the previous session was doing before answering or
 Never guess at prior state and never announce a fresh start. Read what was durably
 written, then say plainly what you found and what you did not.
 
-State root is `~/.autocache/` (`AUTOCACHE_HOME` overrides it). It is plain JSON.
+State lives in the scoped store `~/.autocache/stores/<surface>/` (`AUTOCACHE_HOME` overrides the base, `AUTOCACHE_SCOPE` the surface). It is plain JSON.
 Read it directly if the SessionStart restore block is missing or truncated.
 
 ## Procedure

@@ -8,7 +8,7 @@ description: Tracked-operation discipline - open a breadcrumb, log steps at real
 A breadcrumb is the running record of one mutable operation. It is what makes the
 next session able to continue instead of restart.
 
-State: `~/.autocache/breadcrumbs/<id>.json`, with `breadcrumbs/active.json`
+State: `~/.autocache/stores/<surface>/breadcrumbs/<id>.json`, with `breadcrumbs/active.json`
 pointing at the currently open one (or null). One open breadcrumb per arc.
 
 ## Execution surface

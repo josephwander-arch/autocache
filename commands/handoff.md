@@ -63,7 +63,9 @@ const PACKET = {
 };
 const MD_OUT = null;                         // absolute path, or null
 
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const now = new Date().toISOString();
 const rd = (...p) => { try { return JSON.parse(fs.readFileSync(path.join(HOME, ...p), 'utf8')); } catch (e) { return null; } };
 const wr = (rel, obj) => { const f = path.join(HOME, ...rel); fs.mkdirSync(path.dirname(f), { recursive: true }); const t = f + '.tmp'; fs.writeFileSync(t, JSON.stringify(obj, null, 2)); fs.renameSync(t, f); return f; };
@@ -132,7 +134,7 @@ an unverified assumption. If the git position came back dirty, say so explicitly
 not commit anything unless the user asks.
 
 State stays on this machine. A handoff does not send anything anywhere - the other
-agent reads the same `~/.autocache/` directory, or you paste the markdown.
+agent reads the same scoped store, adopts it via the shared-tag bridge and fork chain, or you paste the markdown.
 
 ## Handing off an open breadcrumb: packet plus fork
 

@@ -11,6 +11,8 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-12
+
 ### Added
 
 - A first-class Codex plugin manifest and personal-marketplace development
@@ -27,6 +29,17 @@ version bump and is called out here explicitly.
 - `activeBreadcrumb()` now treats an explicit null `active.json` pointer as
   idle state instead of an open breadcrumb. The old interpretation prevented
   a new breadcrumb from starting after a normal completion or abort.
+- The seven Claude command snippets computed their state root as the BASE
+  directory, so since 0.3.0 the slash commands read and wrote the legacy root
+  while the hooks wrote the scoped store. They now resolve
+  `<base>/stores/<scope>` exactly like the hooks (AUTOCACHE_SCOPE override,
+  claude-code default).
+- Documentation reconciled to the scoped-store reality: the Codex rule,
+  Codex adapter README, command intros, and five skill files no longer
+  describe one shared live `~/.autocache/` root. One shared FORMAT,
+  per-surface stores, cross-surface resume via the shared-tag bridge and
+  fork chains. A future-migration note for Codex plugin-bundled hooks is
+  recorded in docs/hooks.md.
 
 ## [0.3.3] - 2026-08-12
 

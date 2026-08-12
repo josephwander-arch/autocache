@@ -1,6 +1,6 @@
 ---
 name: autocache
-description: Always-on session continuity rules. Autocache state lives in ~/.autocache and is shared with every other AI surface on this machine.
+description: Always-on session continuity rules. Autocache state lives in a per-surface scoped store under ~/.autocache/stores/ - one shared format across every AI surface on this machine.
 ---
 
 # Autocache rules (Codex)
@@ -13,11 +13,12 @@ Hooks do the writing automatically. These rules tell you how to behave around th
 
 ## The state directory
 
-All continuity state lives in `~/.autocache/` (`%USERPROFILE%\.autocache\` on
-Windows), or in `AUTOCACHE_HOME` when that variable is set.
+Continuity state lives in a per-surface scoped store: `~/.autocache/stores/<surface>/`
+(`%USERPROFILE%\.autocache\stores\<surface>\` on Windows). `AUTOCACHE_HOME` overrides
+the base; `AUTOCACHE_SCOPE` overrides the surface name. Codex resolves to `stores/codex/`.
 
 ```
-~/.autocache/
+~/.autocache/stores/codex/
   config.json
   sessions/<session-id>.json     sessions/index.json
   breadcrumbs/<id>.json          breadcrumbs/active.json
@@ -27,10 +28,10 @@ Windows), or in `AUTOCACHE_HOME` when that variable is set.
   logs/events.jsonl
 ```
 
-This directory is **shared verbatim** with Claude Code and any other installed
-surface. A work arc started elsewhere is resumable here, and an arc started here is
-resumable there. Never keep a private copy of it, never write a parallel state file
-somewhere else, and never assume you were the surface that opened the arc.
+The FORMAT is shared verbatim with Claude Code and every other surface, but each
+surface writes its own scoped store (0.3.0+). Cross-surface resume flows through the
+shared-tag bridge (`external_breadcrumb_dirs` / `external_breadcrumb_owner` in
+`config.json`) and breadcrumb fork chains - not through one shared live directory.
 
 Two rules govern every write into it:
 

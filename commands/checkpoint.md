@@ -15,7 +15,7 @@ Arguments: `$ARGUMENTS`
 - `list` - list saved checkpoints newest first
 - `clear` - delete all checkpoints (confirm with the user first)
 
-State root is `AUTOCACHE_HOME` if set, otherwise `<home>/.autocache`. For every mode,
+State base is `AUTOCACHE_HOME` if set, otherwise `<home>/.autocache`; state lives in the scoped store `stores/<surface>/` beneath it (0.3.0+). For every mode,
 write the script to a temp file and run `node "<path>"` with the Bash tool.
 
 ## Save
@@ -39,7 +39,9 @@ const PACKET = {
   files_touched: ["<absolute paths>"]
 };
 
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const now = new Date().toISOString();
 const id = 'ckpt-' + now.replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z') + '-' + require('crypto').randomBytes(3).toString('hex');
 const rd = (...p) => { try { return JSON.parse(fs.readFileSync(path.join(HOME, ...p), 'utf8')); } catch (e) { return null; } };
@@ -76,7 +78,9 @@ Then confirm in one line: the id, the label, and the next action you recorded.
 
 ```js
 const fs = require('fs'), path = require('path'), os = require('os');
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const dir = path.join(HOME, 'checkpoints');
 const MODE = process.argv[2] || 'load';      // load | list
 const WANT = process.argv[3] || null;
@@ -103,7 +107,9 @@ Deleting checkpoints is irreversible. Ask the user to confirm, then:
 
 ```js
 const fs = require('fs'), path = require('path'), os = require('os');
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const dir = path.join(HOME, 'checkpoints');
 let n = 0;
 try { fs.readdirSync(dir).filter(f => f.endsWith('.json')).forEach(f => { fs.unlinkSync(path.join(dir, f)); n++; }); } catch (e) { }

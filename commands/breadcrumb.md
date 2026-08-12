@@ -102,7 +102,9 @@ const TARGET_ID = "";       // adopt | fork | retire
 const DECISION = { question: "", options: [], lean: null, waits_on: "user", blocks: [] };   // decide
 const RESOLVE = { id: "", chosen: "", decided_by: "", basis: "" };                          // resolve
 
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const DIR = path.join(HOME, 'breadcrumbs');
 const now = new Date().toISOString();
 const rd = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } };

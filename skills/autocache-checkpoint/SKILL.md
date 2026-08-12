@@ -8,7 +8,7 @@ description: Save a restorable snapshot of the current work arc, and restore fro
 A checkpoint answers one question: **if this context vanished right now, what
 would the next session need to pick the work up mid-flight?**
 
-State: `~/.autocache/checkpoints/<id>.json`. Written atomically. Stop also writes
+State: `~/.autocache/stores/<surface>/checkpoints/<id>.json`. Written atomically. Stop also writes
 one automatically at the end of an arc - your manual checkpoints are the ones
 taken at moments only you can recognize as important.
 

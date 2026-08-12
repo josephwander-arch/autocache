@@ -6,11 +6,12 @@ Node hook commands the same way Claude Code does. So the Codex adapter is a pure
 and registers the hook commands. It does not rewrite them, and it does not maintain
 a second copy of the logic.
 
-The Node hook scripts and the `~/.autocache/` state directory are shared verbatim
-with every other surface. That is the design claim, and it is testable: start a
-session in Claude Code, close it, run `codex`, and the open breadcrumb, the last
-session summary, the due reminders and the self-state are all there. There is one
-state directory. The front ends are interchangeable.
+The Node hook scripts and the state FORMAT are shared verbatim with every other
+surface; since 0.3.0 each surface writes its own scoped store under
+`~/.autocache/stores/<surface>/` (Codex: `stores/codex/`). Cross-surface resume is
+explicit by design: the shared-tag bridge and breadcrumb fork chains carry work
+between surfaces - a Claude arc appears in Codex through adoption or fork, not by
+reading one shared live directory.
 
 ## Directory mapping
 
@@ -23,8 +24,9 @@ state directory. The front ends are interchangeable.
 | (registration) | `~/.codex/hooks.json` | Merged, never clobbered. See below. |
 | `commands/*.md` | not installed | Codex has no slash-command directory. The rules file tells the agent to honor the same verbs (`resume`, `checkpoint`, `handoff`, `status`, `remind`, `breadcrumb`, `export`) when you type them as plain requests. |
 
-State root is unchanged and unconditional: `~/.autocache/`, or `AUTOCACHE_HOME` if
-you set it. The installer will create that directory if it is missing. It will
+State base is `~/.autocache/` (`AUTOCACHE_HOME` overrides). The store is the scoped
+`stores/codex/` beneath it (0.3.0+), created on first use and seeded from any legacy
+layout by copy. The installer will create that directory if it is missing. It will
 **never** write, move, or overwrite a file inside it.
 
 ## Hook registration
@@ -105,7 +107,7 @@ Options:
   from this script's location.
 - `--uninstall` - removes `~/.codex/skills/autocache-*`, `~/.codex/hooks/autocache/`,
   `~/.codex/rules/autocache.md`, `~/.codex/agents/autocache-*.md`, and the hook
-  registrations. It does not touch `~/.autocache/`. Your sessions, breadcrumbs and
+  registrations. It does not touch `~/.autocache/` or any scoped store beneath it. Your sessions, breadcrumbs and
   checkpoints survive uninstalling the front end, which is the entire point of
   keeping state out of the surface.
 
@@ -117,11 +119,11 @@ non-zero only on a genuine failure.
 Restart Codex, or start a new session. Hook registration is read at session start;
 an already-running session will not pick it up.
 
-To verify the shared-state claim end to end:
+To verify the scoped-store layout end to end:
 
 ```sh
-ls ~/.autocache/sessions        # sessions written by any surface
-ls ~/.autocache/breadcrumbs     # including active.json
+ls ~/.autocache/stores/codex/sessions        # sessions written by this surface
+ls ~/.autocache/stores/codex/breadcrumbs     # including active.json
 ```
 
 Those are plain JSON files. Read them, diff them, delete them. Nothing is hidden

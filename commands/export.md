@@ -27,7 +27,9 @@ const ID = null;            // specific id, or null for newest
 const FORMAT = "md";        // md | json
 const OUT = null;           // absolute output path, or null to print
 
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const rd = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } };
 const dirOf = k => path.join(HOME, k === 'session' ? 'sessions' : k === 'breadcrumb' ? 'breadcrumbs' : 'checkpoints');
 const newestIn = d => { try { return fs.readdirSync(d).filter(f => f.endsWith('.json') && f !== 'index.json' && f !== 'active.json' && !f.includes('.bak-')).map(f => ({ f, m: fs.statSync(path.join(d, f)).mtimeMs })).sort((a, b) => b.m - a.m); } catch (e) { return []; } };

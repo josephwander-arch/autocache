@@ -5,7 +5,7 @@ description: Create, check, complete, and delete local reminders, including recu
 
 # Autocache: Reminders
 
-Reminders live in `~/.autocache/reminders.json`. They are local, plain JSON, and
+Reminders live in `~/.autocache/stores/<surface>/reminders.json`. They are local, plain JSON, and
 they only surface when an agent session runs. Say that plainly the first time a
 user creates one: **this does not page you, it does not run in the background,
 and it does not fire when no session is open.** It is a note your next session

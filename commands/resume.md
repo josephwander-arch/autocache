@@ -5,7 +5,7 @@ allowed-tools: ["Bash", "Read", "Write", "Glob"]
 
 # /resume
 
-Rebuild the working context of the previous session from `~/.autocache/` and state it
+Rebuild the working context of the previous session from the scoped store (`~/.autocache/stores/<surface>/`) and state it
 plainly, then propose the single next concrete action.
 
 Arguments (optional): `$ARGUMENTS`
@@ -15,7 +15,7 @@ Arguments (optional): `$ARGUMENTS`
 
 ## How to run it
 
-State root is `AUTOCACHE_HOME` if set, otherwise `<home>/.autocache`.
+State base is `AUTOCACHE_HOME` if set, otherwise `<home>/.autocache`; state lives in the scoped store `stores/<surface>/` beneath it (0.3.0+).
 
 Do not read the state files one at a time. Write the script below to a temporary file
 in the system temp directory (for example `autocache-resume.js`), then run it with the
@@ -24,7 +24,9 @@ on Windows.
 
 ```js
 const fs = require('fs'), path = require('path'), os = require('os');
-const HOME = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const BASE = process.env.AUTOCACHE_HOME || path.join(os.homedir(), '.autocache');
+const SCOPE = (process.env.AUTOCACHE_SCOPE || 'claude-code').replace(/[^A-Za-z0-9._-]+/g, '_');
+const HOME = path.join(BASE, 'stores', SCOPE); // scoped store (0.3.0+): commands run on the Claude surface
 const FULL = process.argv.includes('full');
 const WANT = (process.argv.find(a => a.startsWith('sess-')) || '').trim();
 const rd = (...p) => { try { return JSON.parse(fs.readFileSync(path.join(HOME, ...p), 'utf8')); } catch (e) { return null; } };

@@ -6,7 +6,7 @@ description: Durably write everything the next session needs before an arc ends.
 # Autocache: Session Close
 
 Chat context is not memory. Nothing is part of the record until it is written to
-`~/.autocache/`. Close is where that happens - skip it and the next session starts
+`~/.autocache/stores/<surface>/`. Close is where that happens - skip it and the next session starts
 cold even though the code changes were correct.
 
 ## The closeout checklist

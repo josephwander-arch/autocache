@@ -282,3 +282,18 @@ cat /tmp/ac-test/logs/events.jsonl
 If a hook produces no output and no state, check in order: the `hooks` flags in
 `config.json`, whether `AUTOCACHE_HOME` is writable, and whether the plugin is
 actually enabled on the surface.
+
+## Codex plugin-bundled hooks: future migration
+
+Codex 0.144.4 reports `plugin_hooks` removed/false, so the seven Codex hook
+registrations are installed DIRECTLY by the adapter - that is correct for this
+version. Current OpenAI plugin and Codex hook documentation describe
+plugin-bundled hooks; once an installed Codex version proves support, migrate
+in this order and never leave both copies active:
+
+1. Prove the installed version supports plugin hooks (runtime check, not docs).
+2. Build a Codex-specific seven-event hook bundle in the plugin manifest.
+3. Exclude the Claude-only events: TaskCreated, TaskCompleted, TeammateIdle.
+4. Trust and exercise the plugin definitions with real events.
+5. Retire the seven direct registrations.
+6. Verify exactly one handler per event.
