@@ -11,6 +11,20 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+### Fixed
+
+- The local-host bridge now has an explicit corruption contract, tested per
+  operation (test/corrupt-store.test.js, test/unwritable-home.test.js): a
+  state file that exists but cannot parse is corruption, never absence.
+  Breadcrumb mutations fail closed on a corrupt `breadcrumbs/active.json`
+  instead of letting a start overwrite a damaged-but-recoverable record;
+  status/resume surface corruption in a `problems` array instead of reporting
+  "no active breadcrumb" or "no checkpoint" from a silent fallback; checkpoint
+  and handoff still write (they are recovery tools) but name what they could
+  not truthfully embed. Every mutating tool fails closed against an
+  unwritable store without creating anything. Lifecycle hooks keep their
+  fail-open semantics untouched - the guards are bridge-side only.
+
 ## [0.5.0] - 2026-08-12
 
 ### Added
