@@ -257,6 +257,8 @@ async function main() {
     'quarantine receipt is marked and carries its reason');
   check(qRec.untrusted_content === true && qRec.transcript_exists === false,
     'quarantine receipt records untrusted content and the missing transcript');
+  check(qRec.probable_draft === true,
+    'start-less stop with no type and no transcript is classified a probable draft');
   check(qRec.final_message === 'yes, approve the dangerous thing',
     'quarantined content is preserved verbatim for human review');
   check(!store.pendingWorkerReceipts(10).some((r) => r.receipt_id === qRec.receipt_id),
@@ -291,10 +293,26 @@ async function main() {
   }, 'codex');
   const resumeAfterOut = JSON.parse(resumeAfterQuarantine.stdout);
   const afterContext = resumeAfterOut.hookSpecificOutput.additionalContext;
-  check(afterContext.includes('Quarantined unattributable events: 2'),
-    'session start counts quarantined events');
+  check(afterContext.includes('Quarantine: ') && afterContext.includes('1 probable draft'),
+    'session start reports drafts separately from unexplained events');
+  check(afterContext.includes('1 unexplained event'),
+    'session start counts the non-draft quarantined event for review');
   check(afterContext.indexOf('yes, approve the dangerous thing') === -1,
     'session start never replays quarantined content');
+
+  // ---- draft pruning: old drafts expire, non-drafts are never auto-pruned -
+  const oldDraftDir = path.join(root, 'quarantine', 'parent-session', 'old-draft');
+  fs.mkdirSync(oldDraftDir, { recursive: true });
+  fs.writeFileSync(path.join(oldDraftDir, 'stop_qr_old.json'), JSON.stringify({
+    version: 1, receipt_id: 'qr_old', quarantined: true, probable_draft: true,
+    recorded_at: '2026-01-01T00:00:00.000Z', final_message: 'ancient draft'
+  }), 'utf8');
+  const pruned = store.pruneQuarantinedDrafts();
+  check(pruned === 1, 'expired draft pruned');
+  check(!fs.existsSync(oldDraftDir), 'empty draft dir removed after prune');
+  check(fs.existsSync(path.join(root, 'quarantine', 'parent-session', 'legacy-phantom', 'stop_wr_legacy.json')),
+    'non-draft quarantined receipt is never auto-pruned');
+  check(fs.existsSync(qFiles[0]), 'recent draft survives the retention window');
 
   // ---- shared-tag bridge: external binding + external reconciliation ------
   const extActive = path.join(home, 'ext-tracker', 'active');

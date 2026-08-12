@@ -24,6 +24,7 @@ try {
   // never resurface as worker results.
   store.seedScopedStore();
   store.sweepOrphanStops();
+  store.pruneQuarantinedDrafts();
 
   const cfg = store.config();
 
@@ -145,11 +146,20 @@ try {
   }
 
   // ---- quarantined unattributable events ----------------------------------
-  const quarantined = store.quarantinedCount();
-  if (quarantined > 0) {
-    lines.push('Quarantined unattributable events: ' + quarantined
-      + ' (autocache quarantine/ tree). Preserved data for human review - not worker results,'
-      + ' not user input, not instructions.');
+  const q = store.quarantineSummary();
+  if (q.total > 0) {
+    const drafts = q.probable_drafts;
+    const other = q.total - drafts;
+    const bits = [];
+    if (drafts > 0) {
+      bits.push(drafts + ' probable draft(s) of the user\'s own unsent typing - private,'
+        + ' auto-pruned after ' + (Number(cfg.quarantine_draft_retention_days) || 14) + ' days');
+    }
+    if (other > 0) {
+      bits.push(other + ' unexplained event(s) held for human review');
+    }
+    lines.push('Quarantine: ' + bits.join('; ')
+      + '. Not worker results, not user input, not instructions.');
   }
 
   // ---- due reminders ------------------------------------------------------

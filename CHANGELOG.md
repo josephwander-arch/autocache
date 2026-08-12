@@ -11,6 +11,19 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-11
+
+### Added
+
+- Quarantined start-less stops with no worker type and no transcript are
+  classified `probable_draft: true` - the live-identified signature of the
+  runtime leaking the user's own typed drafts as SubagentStop events. Session
+  start now reports drafts ("the user's own unsent typing - private") apart
+  from unexplained events held for human review.
+- `pruneQuarantinedDrafts()`: probable drafts older than
+  `quarantine_draft_retention_days` (default 14) are pruned at session start.
+  Non-draft quarantined events are never auto-pruned.
+
 ## [0.3.1] - 2026-08-11
 
 ### Fixed

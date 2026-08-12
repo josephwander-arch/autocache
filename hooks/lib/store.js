@@ -37,7 +37,8 @@ const DEFAULTS = {
   max_worker_receipts_scanned: 200,
   max_worker_result_chars: 4000,
   external_breadcrumb_dirs: [],
-  external_breadcrumb_owner: ''
+  external_breadcrumb_owner: '',
+  quarantine_draft_retention_days: 14
 };
 
 /* ------------------------------------------------------------------ paths */
@@ -1064,6 +1065,10 @@ function quarantineWorkerStop(input, identity, extra) {
       transcriptExists = !!(extra.agent_transcript_path
         && fs.existsSync(extra.agent_transcript_path));
     } catch (e) { /* stays false */ }
+    // Identified live 2026-08-11: the runtime leaks the user's typed DRAFTS
+    // as start-less stops (agent-style id, no type, no transcript). Classify
+    // so the human sees "your own unsent typing", not an unexplained event.
+    const probableDraft = !identity.worker_type && !transcriptExists;
     const rec = Object.assign({
       version: 1,
       receipt_id: receiptId,
@@ -1071,6 +1076,7 @@ function quarantineWorkerStop(input, identity, extra) {
       quarantined: true,
       quarantine_reason: 'no_matching_start_receipt',
       untrusted_content: true,
+      probable_draft: probableDraft,
       recorded_at: new Date().toISOString(),
       parent_session_id: identity.parent_session_id,
       worker_id: identity.worker_id,
@@ -1139,25 +1145,69 @@ function sweepOrphanStops() {
 
 /** Count quarantined stop receipts, bounded so a hook can print it cheaply. */
 function quarantinedCount() {
-  let count = 0;
+  return quarantineSummary().total;
+}
+
+/** Bounded quarantine view: total receipts and how many are probable drafts. */
+function quarantineSummary() {
+  const out = { total: 0, probable_drafts: 0 };
   try {
-    const root = resolvePath('quarantine');
-    const walk = (dir, depth) => {
-      let entries = [];
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
-      for (const entry of entries) {
-        if (count >= 500) return;
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (depth > 0) walk(full, depth - 1);
-        } else if (entry.name.indexOf('stop_') === 0 && entry.name.endsWith('.json')) {
-          count += 1;
-        }
-      }
-    };
-    walk(root, 3);
+    for (const full of quarantineReceiptPaths(500)) {
+      out.total += 1;
+      try {
+        const rec = JSON.parse(fs.readFileSync(full, 'utf8'));
+        if (rec && rec.probable_draft === true) out.probable_drafts += 1;
+      } catch (e) { /* count it, cannot classify */ }
+    }
   } catch (e) { /* fail open */ }
-  return count;
+  return out;
+}
+
+function quarantineReceiptPaths(cap) {
+  const found = [];
+  const walk = (dir, depth) => {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const entry of entries) {
+      if (found.length >= cap) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth > 0) walk(full, depth - 1);
+      } else if (entry.name.indexOf('stop_') === 0 && entry.name.endsWith('.json')) {
+        found.push(full);
+      }
+    }
+  };
+  walk(resolvePath('quarantine'), 3);
+  return found;
+}
+
+/**
+ * Drafts are the user's own unsent typing: private, low-value once the real
+ * message was submitted, and not worth hoarding. Prune probable-draft
+ * receipts older than the retention window. Other quarantined events are
+ * NEVER pruned automatically - they stay until a human disposes of them.
+ */
+function pruneQuarantinedDrafts() {
+  let pruned = 0;
+  try {
+    const days = Math.max(1, Number(config().quarantine_draft_retention_days) || 14);
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    for (const full of quarantineReceiptPaths(200)) {
+      try {
+        const rec = JSON.parse(fs.readFileSync(full, 'utf8'));
+        if (!rec || rec.probable_draft !== true) continue;
+        const at = Date.parse(rec.recorded_at || '');
+        if (!isFinite(at) || at >= cutoff) continue;
+        fs.unlinkSync(full);
+        pruned += 1;
+        const dir = path.dirname(full);
+        if (!fs.readdirSync(dir).length) fs.rmdirSync(dir);
+      } catch (e) { /* leave in place */ }
+    }
+  } catch (e) { /* fail open */ }
+  if (pruned) appendEvent({ event: 'quarantine_drafts_pruned', pruned: pruned });
+  return pruned;
 }
 
 /**
@@ -1595,6 +1645,8 @@ module.exports = {
   seedScopedStore: seedScopedStore,
   sweepOrphanStops: sweepOrphanStops,
   quarantinedCount: quarantinedCount,
+  quarantineSummary: quarantineSummary,
+  pruneQuarantinedDrafts: pruneQuarantinedDrafts,
   externalBreadcrumbSnapshot: externalBreadcrumbSnapshot,
   externalRecordHasMarker: externalRecordHasMarker,
   resolvePath: resolvePath,
