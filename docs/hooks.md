@@ -256,8 +256,10 @@ surfaces - only the adapter differs.
 | Grok Build | Native manifest and supported-event map; normalizes camelCase envelopes and native subagent fields |
 | Local-model hosts | MCP bridge; explicit continuity tools because no lifecycle hook contract is assumed |
 
-Adapters are linted and fail-open-tested in CI on exactly the same terms as the
-hooks.
+Lifecycle adapters are linted and fail-open-tested in CI on exactly the same terms
+as the hooks. The local-host MCP bridge is a standalone server, not a hook: invalid
+startup or protocol input must fail closed, and its separate transport/safety suite
+tests that contract.
 
 ---
 

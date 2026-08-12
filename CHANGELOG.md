@@ -263,7 +263,7 @@ forgetting what it was doing.
   that `"${CLAUDE_PLUGIN_ROOT}"` is quoted; a repository hygiene job; and the
   **fail-open regression job**, which pipes malformed stdin, empty stdin, a
   nonexistent `AUTOCACHE_HOME`, an unwritable one, and a corrupt state directory into
-  every hook and adapter and asserts exit code 0 in every case. That job is the most
+  every lifecycle hook and hook adapter and asserts exit code 0 in every case. That job is the most
   important thing in CI: a continuity tool that breaks a session is worse than no tool.
 - MIT license, contributing guide, security policy, and issue and pull request
   templates.

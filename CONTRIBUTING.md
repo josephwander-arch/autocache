@@ -81,8 +81,10 @@ cd adapters/local-hosts/mcp-server && npm ci && npm test
 ```
 
 `fail-open.cjs` pipes malformed stdin, empty stdin, a nonexistent `AUTOCACHE_HOME`, an
-unwritable one, and a corrupt state directory into every hook and adapter, and asserts
-exit code 0 in every case. Run it before you push. If it fails, nothing else matters.
+unwritable one, and a corrupt state directory into every lifecycle hook and hook
+adapter, and asserts exit code 0 in every case. Standalone servers such as the generic
+MCP bridge are fail-closed components and run their own startup, transport, and safety
+tests. Run both test groups before you push.
 
 ## Testing a hook by hand
 

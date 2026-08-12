@@ -96,10 +96,11 @@ jobs:
   # THE MOST IMPORTANT JOB IN THIS FILE.
   #
   # A continuity tool that breaks the session it is meant to protect is worse
-  # than no tool. Every hook and adapter is fed malformed stdin, empty stdin, a
-  # nonexistent AUTOCACHE_HOME, an unwritable one, and a corrupt state directory,
-  # and must exit 0 in every single case. If this job fails, the build fails -
-  # no matter what else passed.
+  # than no tool. Every lifecycle hook and hook adapter is fed malformed stdin,
+  # empty stdin, a nonexistent AUTOCACHE_HOME, an unwritable one, and a corrupt
+  # state directory, and must exit 0 in every single case. Standalone MCP servers
+  # are fail-closed components with their own safety tests. If this job fails,
+  # the build fails - no matter what else passed.
   # ---------------------------------------------------------------------------
   fail-open:
     name: fail-open regression (${{ matrix.os }})
