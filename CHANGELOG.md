@@ -11,6 +11,8 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-12
+
 ### Added
 
 - A native Grok Build distribution with a `.grok-plugin` manifest,
@@ -39,6 +41,21 @@ version bump and is called out here explicitly.
   `subagentType`, `toolName`, and related top-level fields. Bounded parent lookup
   preserves child isolation; unknown or ambiguous parents cannot mutate the lead
   fork-chain head.
+- Source-owner review hardening of the isolation core: event-name VALUES now
+  compare separator-free lowercase, so the PascalCase envelopes real hosts emit
+  bind child identity exactly like the snake_case fixture shape (the old regex
+  silently dropped child isolation for PascalCase); the internal
+  worker-session-identity marker is stripped from inbound payloads so replayed
+  or forwarded events cannot reroute attribution; the bounded parent scan
+  orders `workers/` newest-first before its 100-directory cap; and the
+  ambiguous-window advice pause is scoped to Codex so one lost stop receipt
+  cannot permanently mute lead advice on other surfaces.
+- Local-host bridge edges: `AUTOCACHE_MCP_ALLOWED_HOSTS` is validated at
+  startup (port or path entries and more than 20 entries reject loudly instead
+  of silently never matching); the CLI imports transports lazily so the
+  fail-closed startup throw lands in the operator-facing error contract; and
+  bounded tool output measures the final escaped wrapper so truncated results
+  cannot exceed the 12,000-character cap.
 
 ## [0.4.0] - 2026-08-12
 

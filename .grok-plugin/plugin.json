@@ -1,6 +1,6 @@
 {
   "name": "autocache",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Local session continuity for Grok Build. Native Grok hooks capture work state and worker receipts while Grok keeps control of execution.",
   "author": {
     "name": "AutoCache",
