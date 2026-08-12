@@ -77,7 +77,14 @@ try {
   // child action to the lead.
   const worker = store.workerIdentity(input);
   const parentSessionId = typeof input.session_id === 'string' ? input.session_id : '';
+  // The ambiguous-window pause is scoped to Codex, the one surface with the
+  // untagged-child gap (post-tool-use.js quarantines the same way). Claude
+  // guarantees agent_id on child tool events and Grok children bind by session
+  // identity, so on those surfaces an untagged event IS the lead - and a
+  // worker whose stop receipt was lost (timeout, crash) must not mute lead
+  // advice for the rest of the session.
   const ambiguousDuringWorker = !worker && parentSessionId
+    && store.surfaceName(input).toLowerCase() === 'codex'
     && store.activeWorkerIds(parentSessionId).length > 0;
   if (worker || ambiguousDuringWorker) process.exit(0);
 

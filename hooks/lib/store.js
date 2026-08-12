@@ -732,6 +732,10 @@ function surfaceName(input) {
 function normalizeHookInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const out = Object.assign({}, input);
+  // The worker-session-identity marker is internal: only the setter below may
+  // establish it. A host payload arriving with the key (replayed or forwarded
+  // event) must not steer parent resolution.
+  delete out.__autocache_worker_session_identity;
   for (const key of Object.keys(input)) {
     if (!/[A-Z]/.test(key)) continue;
     const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
@@ -743,8 +747,12 @@ function normalizeHookInput(input) {
   // as the child identity, so mark that special case for bounded parent lookup.
   if (!out.agent_id && typeof out.subagent_id === 'string') out.agent_id = out.subagent_id;
   if (!out.agent_type && typeof out.subagent_type === 'string') out.agent_type = out.subagent_type;
-  const event = String(out.hook_event_name || '').toLowerCase();
-  if (!out.agent_id && out.subagent_type && /^(pre_tool_use|post_tool_use|post_tool_use_failure)$/.test(event)
+  // Hosts disagree on the event-name VALUE casing (Grok registers PascalCase
+  // 'PreToolUse' like Claude; fixtures and some adapters send snake_case), so
+  // compare separator-free lowercase - 'PreToolUse', 'preToolUse', and
+  // 'pre_tool_use' must all bind, or child events fall through to the lead.
+  const event = String(out.hook_event_name || '').toLowerCase().replace(/[_-]/g, '');
+  if (!out.agent_id && out.subagent_type && /^(pretooluse|posttooluse|posttoolusefailure)$/.test(event)
       && typeof out.session_id === 'string' && out.session_id) {
     out.agent_id = out.session_id;
     out.__autocache_worker_session_identity = true;
@@ -762,8 +770,17 @@ function activeWorkerIdentityById(workerId) {
     const wanted = String(workerId || '').trim();
     if (!wanted) return null;
     const root = resolvePath('workers');
+    // Newest-first before the bound: readdir order is arbitrary and workers/
+    // accumulates for the life of the store, so an unordered cap could slice
+    // out the live parent while keeping dozens of finished ones.
     const parents = fs.readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        let at = 0;
+        try { at = fs.statSync(path.join(root, entry.name)).mtimeMs; } catch (e) { /* unreadable sorts last */ }
+        return { name: entry.name, at };
+      })
+      .sort((a, b) => b.at - a.at)
       .slice(0, 100);
     let match = null;
     for (const parent of parents) {

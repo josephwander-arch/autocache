@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { runStdio } from './stdio.js';
-
+// Both transports are imported lazily INSIDE the try: the import chain
+// evaluates runtime.js, whose fail-closed startup throw must land in the
+// catch below (friendly stderr + exitCode 1), not as a raw module-load stack.
 const mode = String(process.argv[2] || 'stdio').toLowerCase();
 
 try {
   if (mode === 'stdio') {
+    const { runStdio } = await import('./stdio.js');
     await runStdio();
   } else if (mode === 'http') {
     const { startHttpServer } = await import('./http.js');

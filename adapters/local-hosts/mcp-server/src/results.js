@@ -22,12 +22,22 @@ function boundedJson(value) {
     json = JSON.stringify({ ok: false, error: 'result could not be serialized' }, null, 2);
   }
   if (json.length <= MAX_OUTPUT_CHARS) return json;
-  return JSON.stringify({
-    ok: true,
-    truncated: true,
-    original_chars: json.length,
-    preview: json.slice(0, MAX_OUTPUT_CHARS - 300)
-  }, null, 2);
+  // The preview re-escapes inside the wrapper string (newlines and quotes
+  // double), so measure the FINAL stringified size and shrink until it fits -
+  // a pre-escape slice alone can nearly double the cap.
+  let previewChars = MAX_OUTPUT_CHARS - 300;
+  let wrapped = '';
+  for (let attempt = 0; attempt < 6; attempt++) {
+    wrapped = JSON.stringify({
+      ok: true,
+      truncated: true,
+      original_chars: json.length,
+      preview: json.slice(0, previewChars)
+    }, null, 2);
+    if (wrapped.length <= MAX_OUTPUT_CHARS || previewChars <= 500) break;
+    previewChars = Math.max(500, Math.floor(previewChars * (MAX_OUTPUT_CHARS / wrapped.length)) - 50);
+  }
+  return wrapped;
 }
 
 export function okResult(value) {

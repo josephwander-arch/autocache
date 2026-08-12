@@ -130,7 +130,11 @@ async function main() {
   const grokPre = runHook('pre-tool-use.js', {
     sessionId: 'grok-worker',
     subagentType: 'explorer',
-    hookEventName: 'pre_tool_use',
+    // PascalCase is the value real Grok envelopes carry (its hooks.json
+    // registers 'PreToolUse'); the snake_case variant is asserted separately
+    // below. This line previously fed 'pre_tool_use', which masked a binding
+    // regex that only matched snake_case.
+    hookEventName: 'PreToolUse',
     toolName: 'Edit',
     toolInput: { file_path: path.join(repoRoot, 'README.md') }
   }, 'grok');
@@ -143,13 +147,41 @@ async function main() {
   runHook('post-tool-use.js', {
     sessionId: 'grok-worker',
     subagentType: 'explorer',
-    hookEventName: 'post_tool_use',
+    hookEventName: 'PostToolUse',
     toolName: 'Edit',
     toolUseId: 'grok-tool-1',
     toolInput: { file_path: 'src/grok-child.js' }
   }, 'grok');
   check(store.readBreadcrumb('bc_lead').tool_calls === beforeGrokTool,
     'Grok child tool does not increment the lead breadcrumb');
+  // snake_case event values must keep binding too (adapter/back-compat shape).
+  const beforeGrokSnakeArc = JSON.stringify(store.arc());
+  runHook('pre-tool-use.js', {
+    sessionId: 'grok-worker',
+    subagentType: 'explorer',
+    hookEventName: 'pre_tool_use',
+    toolName: 'Read',
+    toolInput: { file_path: path.join(repoRoot, 'README.md') }
+  }, 'grok');
+  check(JSON.stringify(store.arc()) === beforeGrokSnakeArc,
+    'Grok snake_case child event value still binds away from the lead arc');
+  // A hostile or replayed payload carrying the internal identity marker with
+  // explicit lead identity must not be rerouted through the receipt scan.
+  const beforeSpoofArc = JSON.stringify(store.arc());
+  runHook('post-tool-use.js', {
+    session_id: 'lead-session',
+    agent_id: 'grok-worker',
+    __autocache_worker_session_identity: true,
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Edit',
+    tool_use_id: 'spoof-tool-1',
+    tool_input: { file_path: 'src/spoofed.js' }
+  }, 'grok');
+  check(JSON.stringify(store.arc()) === beforeSpoofArc,
+    'Inbound identity-marker key is stripped and cannot reroute attribution');
+  const spoofEvents = path.join(root, 'workers', 'lead-session', 'grok-worker', 'events.jsonl');
+  check(fs.existsSync(spoofEvents),
+    'Explicitly tagged worker event lands under its declared parent, not unknown-parent');
   const grokEvents = path.join(root, 'workers', 'grok-parent', 'grok-worker', 'events.jsonl');
   check(fs.existsSync(grokEvents), 'Grok child tool binds to its parent worker stream');
   check(fs.readFileSync(grokEvents, 'utf8').includes('src/grok-child.js'),

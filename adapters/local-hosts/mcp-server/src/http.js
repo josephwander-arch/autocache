@@ -25,11 +25,30 @@ function isLoopback(host) {
 }
 
 function parseAllowedHosts(value) {
-  return String(value || '')
+  const entries = String(value || '')
     .split(',')
     .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 20);
+    .filter(Boolean);
+  if (entries.length > 20) {
+    throw new Error('AUTOCACHE_MCP_ALLOWED_HOSTS supports at most 20 entries');
+  }
+  return entries.map((entry) => {
+    let parsed;
+    try {
+      parsed = new URL(`http://${entry}`);
+    } catch {
+      throw new Error('AUTOCACHE_MCP_ALLOWED_HOSTS entries must be bare hostnames');
+    }
+    // SDK v2 host validation compares hostname-only (the request Host header
+    // is parsed and its port stripped), so a port-carrying entry could never
+    // match anything and would 403 every request with no startup diagnostic.
+    // Reject loudly at startup instead, like the origins parser above.
+    if (parsed.port || parsed.username || parsed.password
+        || (parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
+      throw new Error('AUTOCACHE_MCP_ALLOWED_HOSTS entries must be bare hostnames without port, path, credentials, query, or fragment');
+    }
+    return parsed.hostname;
+  });
 }
 
 function parseAllowedOrigins(value) {
