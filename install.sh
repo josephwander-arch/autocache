@@ -12,7 +12,7 @@
 
 set -u
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 DRY_RUN=0
 LINK=0
 UNINSTALL=0
@@ -35,7 +35,8 @@ Usage: ./install.sh [options]
 Environment:
   AUTOCACHE_HOME     state root (default ~/.autocache) - never overwritten
   CODEX_HOME         Codex home (default ~/.codex)
-  AUTOCACHE_GROK_DIR if set, Grok skill markdown is copied here
+  AUTOCACHE_GROK_DIR if set, legacy read-only Grok skills are removed
+                     from here on --uninstall (default ~/.grok/skills)
 EOF
 }
 
@@ -166,59 +167,56 @@ say ""
 
 # --------------------------------------------------------------------- Grok
 
-GROK_SRC="$REPO_ROOT/adapters/grok"
+# Grok Build consumes AutoCache as a native plugin (.grok-plugin/plugin.json);
+# nothing is copied into ~/.grok by this script. The only Grok work left here
+# is removing skills installed by the retired pre-0.5.0 read-only flow.
+LEGACY_GROK_SKILLS="autocache-handoff autocache-resume autocache-state-reference autocache-status"
+
 GROK_DEST="${AUTOCACHE_GROK_DIR:-}"
 if [ -z "$GROK_DEST" ] && [ -d "$HOME/.grok/skills" ]; then
   GROK_DEST="$HOME/.grok/skills"
 fi
 
-if [ ! -d "$GROK_SRC" ]; then
-  add_row "grok" "n/a" "skipped" "adapters/grok is missing"
-elif [ -n "$GROK_DEST" ]; then
-  grok_changed=0
-  grok_failed=0
-  for skill_dir in "$GROK_SRC"/*/; do
-    [ -d "$skill_dir" ] || continue
-    name=$(basename "$skill_dir")
-    src="$skill_dir/SKILL.md"
-    [ -f "$src" ] || continue
-    dest="$GROK_DEST/$name/SKILL.md"
-    if [ "$UNINSTALL" -eq 1 ]; then
+if [ "$UNINSTALL" -eq 1 ]; then
+  if [ -n "$GROK_DEST" ]; then
+    grok_removed=0
+    grok_failed=0
+    for name in $LEGACY_GROK_SKILLS; do
+      dest="$GROK_DEST/$name"
       if [ -e "$dest" ]; then
-        [ "$DRY_RUN" -eq 1 ] || rm -rf "$GROK_DEST/$name" || grok_failed=1
-        grok_changed=$((grok_changed + 1))
-        say "  removed  $GROK_DEST/$name"
+        if [ "$DRY_RUN" -eq 1 ]; then
+          say "  would remove $dest"
+        else
+          rm -rf "$dest" || grok_failed=1
+          say "  removed  $dest"
+        fi
+        grok_removed=$((grok_removed + 1))
       fi
-    elif cmp -s "$src" "$dest" 2>/dev/null; then
-      say "  unchanged $dest"
+    done
+    if [ "$grok_failed" -eq 1 ]; then
+      add_row "grok" "yes" "FAILED" "could not remove legacy skills from $GROK_DEST"
+    elif [ "$grok_removed" -eq 0 ]; then
+      add_row "grok" "yes" "clean" "no legacy read-only skills in $GROK_DEST"
+    elif [ "$DRY_RUN" -eq 1 ]; then
+      add_row "grok" "yes" "planned" "would remove $grok_removed legacy read-only skill(s) from $GROK_DEST"
     else
-      if [ "$DRY_RUN" -eq 1 ]; then
-        say "  would write $dest"
-      else
-        mkdir -p "$GROK_DEST/$name" 2>/dev/null || grok_failed=1
-        cp "$src" "$dest.tmp" 2>/dev/null && mv "$dest.tmp" "$dest" 2>/dev/null || grok_failed=1
-        say "  wrote    $dest"
-      fi
-      grok_changed=$((grok_changed + 1))
+      add_row "grok" "yes" "removed" "$grok_removed legacy read-only skill(s) from $GROK_DEST"
     fi
-  done
-  if [ "$grok_failed" -eq 1 ]; then
-    add_row "grok" "yes" "FAILED" "could not write into $GROK_DEST"
-  elif [ "$UNINSTALL" -eq 1 ]; then
-    add_row "grok" "yes" "removed" "$GROK_DEST"
-  elif [ "$grok_changed" -eq 0 ]; then
-    add_row "grok" "yes" "unchanged" "$GROK_DEST"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    add_row "grok" "yes" "planned" "$GROK_DEST (read-only surface)"
+    say "  The Grok Build plugin itself is managed by Grok, not this script:"
+    say "  remove it with 'grok plugin uninstall' - see adapters/grok/README.md."
   else
-    add_row "grok" "yes" "installed" "$GROK_DEST (read-only surface)"
+    add_row "grok" "no" "skipped" "no ~/.grok/skills - no legacy skills to remove"
   fi
 else
-  add_row "grok" "manual" "manual" "paste the markdown - see adapters/grok/README.md"
-  say "Grok: nothing to install. Grok is a prompt surface with no local directory."
-  say "  Paste the skill bodies from $GROK_SRC into Grok's custom instructions."
-  say "  Grok READS ~/.autocache and narrates it. Grok cannot write to it."
-  say "  Anything Grok proposes must be executed by you, Claude Code, or Codex."
+  if [ -n "$GROK_DEST" ] || [ -d "$HOME/.grok" ]; then
+    grok_detected="yes"
+  else
+    grok_detected="no"
+  fi
+  add_row "grok" "$grok_detected" "plugin" "grok plugin install josephwander-arch/autocache --trust"
+  say "Grok: nothing is copied for Grok Build. AutoCache installs as a native plugin:"
+  say "  grok plugin install josephwander-arch/autocache --trust"
+  say "  See adapters/grok/README.md for trust, enable, and verification steps."
 fi
 say ""
 
