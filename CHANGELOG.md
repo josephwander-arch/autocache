@@ -11,6 +11,21 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-12
+
+### Fixed
+
+- External-marker reconciliation no longer loses receipts to archive volume.
+  Two live defects in `externalRecordHasMarker`: the 300-file collection cap
+  was applied during an UNORDERED walk, so date-named archive dirs (oldest
+  first in readdir order) filled the cap before the newest records were even
+  collected - a receipt re-pended the moment its breadcrumb archived; and a
+  burst of newer archive records could crowd still-ACTIVE records out of the
+  bounded read window. Now: active-dir records are always read (own cap),
+  archive dirs enumerate newest-first before the cap, and only archive
+  records compete for the mtime-ranked read slots. Regression tests plant
+  350 filler records and assert both tiers still find their markers.
+
 ## [0.3.2] - 2026-08-11
 
 ### Added

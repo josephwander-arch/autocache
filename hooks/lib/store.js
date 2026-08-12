@@ -815,28 +815,39 @@ function externalRecordHasMarker(marker) {
     const dirs = Array.isArray(cfg.external_breadcrumb_dirs)
       ? cfg.external_breadcrumb_dirs.slice(0, 4) : [];
     if (!dirs.length || !marker) return false;
-    const files = [];
-    const collect = (root, depth) => {
+    // Two tiers, both bounded. ACTIVE records (the configured dirs
+    // themselves) are few and always current - read every one, never let
+    // archive volume crowd them out. ARCHIVE records (the sibling completed/
+    // tree) are enumerated newest-first BEFORE the cap: date-named dirs sort
+    // ascending in readdir order, so an unordered capped walk fills with the
+    // OLDEST records and a marker just archived is never even collected
+    // (live bug 2026-08-12: reconciled receipts re-pended the moment their
+    // breadcrumb archived into completed/<date>/).
+    const active = [];
+    const archive = [];
+    const collect = (root, depth, sink, cap) => {
       let entries = [];
       try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch (e) { return; }
+      entries.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
       for (const entry of entries) {
-        if (files.length >= 300) return;
+        if (sink.length >= cap) return;
         const full = path.join(root, entry.name);
         if (entry.isDirectory()) {
-          if (depth > 0) collect(full, depth - 1);
+          if (depth > 0) collect(full, depth - 1, sink, cap);
         } else if (entry.name.endsWith('.json')) {
           let mtime = 0;
           try { mtime = fs.statSync(full).mtimeMs; } catch (e) { /* ignore */ }
-          files.push({ full: full, mtime: mtime });
+          sink.push({ full: full, mtime: mtime });
         }
       }
     };
     for (const dir of dirs) {
-      collect(String(dir), 1);
-      collect(path.join(path.dirname(String(dir)), 'completed'), 2);
+      collect(String(dir), 1, active, 150);
+      collect(path.join(path.dirname(String(dir)), 'completed'), 2, archive, 300);
     }
-    files.sort((a, b) => b.mtime - a.mtime);
-    for (const file of files.slice(0, 150)) {
+    archive.sort((a, b) => b.mtime - a.mtime);
+    const readList = active.concat(archive.slice(0, 150));
+    for (const file of readList) {
       try {
         const stat = fs.statSync(file.full);
         if (stat.size > 512 * 1024) continue;

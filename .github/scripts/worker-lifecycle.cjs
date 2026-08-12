@@ -371,6 +371,25 @@ async function main() {
   }), 'utf8');
   check(store.receiptReconciled(bridgeRec),
     'external marker reconciles the bridge receipt');
+  // Regression (live bug 2026-08-12): a large date-dir archive must not push
+  // the newest records past the collection cap - old dirs enumerate first in
+  // readdir order, so an unordered capped walk never reaches the new marker.
+  const extCompleted = path.join(home, 'ext-tracker', 'completed');
+  const oldDay = path.join(extCompleted, '2026-01-01');
+  fs.mkdirSync(oldDay, { recursive: true });
+  for (let i = 0; i < 350; i++) {
+    fs.writeFileSync(path.join(oldDay, 'bc_filler_' + String(i).padStart(3, '0') + '.json'),
+      JSON.stringify({ id: 'bc_filler_' + i, steps: ['noise'] }), 'utf8');
+  }
+  const newDay = path.join(extCompleted, '2026-08-12');
+  fs.mkdirSync(newDay, { recursive: true });
+  fs.writeFileSync(path.join(newDay, 'bc_archived_lead.json'), JSON.stringify({
+    id: 'bc_archived_lead',
+    steps: ['reconciled after archive [worker:' + bridgeRec.receipt_id + '-arch]']
+  }), 'utf8');
+  check(store.externalRecordHasMarker('[worker:' + bridgeRec.receipt_id + '-arch]'),
+    'marker in the NEWEST archive dir is found despite 350 older filler records');
+
   // Regression (live bug 2026-08-11): external reconciliation must survive a
   // store with NO local breadcrumbs dir at all - the readdir throw used to
   // abort before the external check ran.
