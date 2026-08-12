@@ -12,6 +12,33 @@ import { cleanList, cleanText } from './results.js';
 
 const nowIso = () => new Date().toISOString();
 
+// Corruption contract (see test/corrupt-store.test.js for the per-operation
+// decisions): a state file that EXISTS but cannot be parsed is corruption,
+// never absence. store.readJSON deliberately fails open for the lifecycle
+// hooks, so the bridge probes with a sentinel to tell the two apart. Reads
+// surface corruption explicitly; mutations that could overwrite the damaged
+// record fail closed. Absent files remain ordinary empty-store state.
+const CORRUPT_SENTINEL = { __autocache_corrupt_probe: true };
+
+function stateProblem(relPath) {
+  try {
+    if (!fs.existsSync(store.resolvePath(relPath))) return null;
+  } catch {
+    return null;
+  }
+  if (store.readJSON(relPath, CORRUPT_SENTINEL) === CORRUPT_SENTINEL) {
+    return `${relPath} exists but is not valid JSON; repair or remove it`;
+  }
+  return null;
+}
+
+function guardBreadcrumbMutation() {
+  const problem = stateProblem('breadcrumbs/active.json');
+  if (problem) {
+    throw new Error(`${problem} - breadcrumb mutations fail closed rather than overwrite it; no write was made`);
+  }
+}
+
 function isOpenReminder(reminder) {
   if (!reminder || typeof reminder !== 'object') return false;
   if (reminder.completed === true || reminder.done === true) return false;
@@ -70,11 +97,11 @@ function countJsonFiles(relativeDirectory, cap = 10_000) {
   }
 }
 
-function latestJson(relativeDirectory, exclude = new Set()) {
+function latestJson(relativeDirectory) {
   try {
     const directory = store.resolvePath(relativeDirectory);
     const entries = fs.readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && !exclude.has(entry.name))
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
       .slice(0, 500)
       .map((entry) => {
         const full = path.join(directory, entry.name);
@@ -83,10 +110,18 @@ function latestJson(relativeDirectory, exclude = new Set()) {
         return { name: entry.name, modified };
       })
       .sort((a, b) => b.modified - a.modified);
-    if (!entries.length) return null;
-    return store.readJSON(`${relativeDirectory}/${entries[0].name}`, null);
+    if (!entries.length) return { record: null, problem: null };
+    const relative = `${relativeDirectory}/${entries[0].name}`;
+    const record = store.readJSON(relative, CORRUPT_SENTINEL);
+    if (record === CORRUPT_SENTINEL) {
+      // Distinguish "no checkpoint" from "the newest checkpoint is damaged" -
+      // silently reporting null here is the defaults-instead-of-surfacing
+      // failure the corruption contract forbids.
+      return { record: null, problem: `${relative} exists but is not valid JSON; repair or remove it` };
+    }
+    return { record, problem: null };
   } catch {
-    return null;
+    return { record: null, problem: null };
   }
 }
 
@@ -152,18 +187,26 @@ export const actions = {
         reminders_pending: pending.length,
         reminders_due: due.length
       },
-      problems: reminderState.corrupted ? [
-        'reminders.json is invalid; reminder writes will fail closed until it is repaired'
-      ] : []
+      problems: [
+        ...(reminderState.corrupted
+          ? ['reminders.json is invalid; reminder writes will fail closed until it is repaired']
+          : []),
+        ...[stateProblem('breadcrumbs/active.json')].filter(Boolean)
+      ]
     };
   },
 
   resume() {
-    const checkpoint = latestJson('checkpoints');
+    const { record: checkpoint, problem: checkpointProblem } = latestJson('checkpoints');
+    const problems = [
+      stateProblem('breadcrumbs/active.json'),
+      checkpointProblem
+    ].filter(Boolean);
     return {
       ok: true,
       scope,
       automatic_lifecycle_capture: false,
+      problems,
       last_session: sessionSummary(store.lastSession()),
       active_breadcrumb: renderBreadcrumb(store.activeBreadcrumb()),
       latest_checkpoint: checkpoint ? {
@@ -182,6 +225,7 @@ export const actions = {
   },
 
   breadcrumbStart({ name, targets = [], planned_steps: plannedSteps = [] }) {
+    guardBreadcrumbMutation();
     return {
       ok: true,
       breadcrumb: runBreadcrumbCli('start', {
@@ -193,6 +237,7 @@ export const actions = {
   },
 
   breadcrumbStep({ milestone }) {
+    guardBreadcrumbMutation();
     return {
       ok: true,
       breadcrumb: runBreadcrumbCli('step', { text: cleanText(milestone, 2000) })
@@ -200,6 +245,7 @@ export const actions = {
   },
 
   breadcrumbComplete({ outcome }) {
+    guardBreadcrumbMutation();
     return {
       ok: true,
       breadcrumb: runBreadcrumbCli('complete', { text: cleanText(outcome, 2000) })
@@ -207,6 +253,7 @@ export const actions = {
   },
 
   breadcrumbAbort({ reason }) {
+    guardBreadcrumbMutation();
     return {
       ok: true,
       breadcrumb: runBreadcrumbCli('abort', { text: cleanText(reason, 2000) })
@@ -240,7 +287,17 @@ export const actions = {
       surface: actor,
       data: { id, label: packet.label }
     });
-    return { ok: true, checkpoint: packet, path: store.resolvePath(`checkpoints/${id}.json`) };
+    // The write proceeds even when unrelated state is damaged - a checkpoint
+    // is a recovery tool - but what could not be embedded is surfaced, never
+    // silently recorded as absent.
+    const problems = [stateProblem('breadcrumbs/active.json')].filter(Boolean)
+      .map((problem) => `${problem} - breadcrumb_id was recorded as null`);
+    return {
+      ok: true,
+      checkpoint: packet,
+      path: store.resolvePath(`checkpoints/${id}.json`),
+      ...(problems.length ? { problems } : {})
+    };
   },
 
   handoff(input) {
@@ -270,6 +327,7 @@ export const actions = {
     if (!store.writeJSON(relativePath, packet)) throw new Error('handoff packet could not be written');
 
     let sessionUpdated = false;
+    const problems = [];
     if (sessionId) {
       const session = store.sessionRecord(sessionId);
       if (session) {
@@ -283,6 +341,11 @@ export const actions = {
         };
         session.updated_at = writtenAt;
         sessionUpdated = store.writeJSON(`sessions/${store.safeName(sessionId)}.json`, session);
+      } else {
+        // sessionRecord fails open to null; if the file is actually present
+        // but damaged, say so instead of a bare session_updated: false.
+        const problem = stateProblem(`sessions/${store.safeName(sessionId)}.json`);
+        if (problem) problems.push(`${problem} - the session record was not updated`);
       }
     }
     store.appendEvent({
@@ -295,6 +358,7 @@ export const actions = {
       handoff: packet,
       path: store.resolvePath(relativePath),
       session_updated: sessionUpdated,
+      ...(problems.length ? { problems } : {}),
       note: 'Saved locally only; no message was sent and ownership was not transferred.'
     };
   },
