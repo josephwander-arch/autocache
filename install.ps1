@@ -35,7 +35,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$Version = '0.2.0'
+$Version = '0.3.0'
 $rows = New-Object System.Collections.ArrayList
 $failures = 0
 
@@ -62,7 +62,6 @@ $UserHome  = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
 $StateRoot = if ($env:AUTOCACHE_HOME) { $env:AUTOCACHE_HOME } else { Join-Path $UserHome '.autocache' }
 $CodexDir  = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $UserHome '.codex' }
 $ClaudeDir = Join-Path $UserHome '.claude'
-$GrokSrc   = Join-Path (Join-Path $RepoRoot 'adapters') 'grok'
 
 Say "Autocache installer v$Version"
 if ($DryRun) { Say '  DRY RUN - nothing will be written' }
@@ -178,73 +177,58 @@ Say ''
 
 # ----------------------------------------------------------------------- Grok
 
+# Grok Build consumes AutoCache as a native plugin (.grok-plugin/plugin.json);
+# nothing is copied into ~/.grok by this script. The only Grok work left here
+# is removing skills installed by the retired pre-0.5.0 read-only flow.
+$legacyGrokSkills = @('autocache-handoff', 'autocache-resume', 'autocache-state-reference', 'autocache-status')
+
 $grokDest = $env:AUTOCACHE_GROK_DIR
 if (-not $grokDest) {
     $candidate = Join-Path (Join-Path $UserHome '.grok') 'skills'
     if (Test-Path -LiteralPath $candidate) { $grokDest = $candidate }
 }
 
-function Test-SameFile {
-    param([string]$A, [string]$B)
-    if (-not (Test-Path -LiteralPath $B)) { return $false }
-    try {
-        return (Get-FileHash -LiteralPath $A -Algorithm SHA256).Hash -eq
-               (Get-FileHash -LiteralPath $B -Algorithm SHA256).Hash
-    } catch { return $false }
-}
-
-if (-not (Test-Path -LiteralPath $GrokSrc)) {
-    Add-Row 'grok' 'n/a' 'skipped' 'adapters/grok is missing'
-} elseif ($grokDest) {
-    $grokChanged = 0
-    $grokFailed  = $false
-    foreach ($dir in (Get-ChildItem -LiteralPath $GrokSrc -Directory -ErrorAction SilentlyContinue)) {
-        $src = Join-Path $dir.FullName 'SKILL.md'
-        if (-not (Test-Path -LiteralPath $src)) { continue }
-        $destDir = Join-Path $grokDest $dir.Name
-        $dest    = Join-Path $destDir 'SKILL.md'
-        try {
-            if ($Uninstall) {
-                if (Test-Path -LiteralPath $destDir) {
-                    if (-not $DryRun) { Remove-Item -LiteralPath $destDir -Recurse -Force }
-                    $grokChanged++
-                    Say "  removed   $destDir"
+if ($Uninstall) {
+    if ($grokDest) {
+        $grokRemoved = 0
+        $grokFailed  = $false
+        foreach ($name in $legacyGrokSkills) {
+            $dest = Join-Path $grokDest $name
+            if (Test-Path -LiteralPath $dest) {
+                try {
+                    if ($DryRun) {
+                        Say "  would remove $dest"
+                    } else {
+                        Remove-Item -LiteralPath $dest -Recurse -Force
+                        Say "  removed   $dest"
+                    }
+                    $grokRemoved++
+                } catch {
+                    $grokFailed = $true
+                    Say "  failed    $dest - $($_.Exception.Message)"
                 }
-            } elseif (Test-SameFile $src $dest) {
-                Say "  unchanged $dest"
-            } elseif ($DryRun) {
-                Say "  would write $dest"
-                $grokChanged++
-            } else {
-                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-                # Atomic: write beside the target, then rename over it.
-                Copy-Item -LiteralPath $src -Destination "$dest.tmp" -Force
-                Move-Item -LiteralPath "$dest.tmp" -Destination $dest -Force
-                Say "  wrote     $dest"
-                $grokChanged++
             }
-        } catch {
-            $grokFailed = $true
-            Say "  failed    $dest - $($_.Exception.Message)"
         }
-    }
-    if ($grokFailed) {
-        Add-Row 'grok' 'yes' 'FAILED' "could not write into $grokDest"
-    } elseif ($Uninstall) {
-        Add-Row 'grok' 'yes' 'removed' $grokDest
-    } elseif ($grokChanged -eq 0) {
-        Add-Row 'grok' 'yes' 'unchanged' $grokDest
-    } elseif ($DryRun) {
-        Add-Row 'grok' 'yes' 'planned' "$grokDest (read-only surface)"
+        if ($grokFailed) {
+            Add-Row 'grok' 'yes' 'FAILED' "could not remove legacy skills from $grokDest"
+        } elseif ($grokRemoved -eq 0) {
+            Add-Row 'grok' 'yes' 'clean' "no legacy read-only skills in $grokDest"
+        } elseif ($DryRun) {
+            Add-Row 'grok' 'yes' 'planned' "would remove $grokRemoved legacy read-only skill(s) from $grokDest"
+        } else {
+            Add-Row 'grok' 'yes' 'removed' "$grokRemoved legacy read-only skill(s) from $grokDest"
+        }
+        Say '  The Grok Build plugin itself is managed by Grok, not this script:'
+        Say "  remove it with 'grok plugin uninstall' - see adapters/grok/README.md."
     } else {
-        Add-Row 'grok' 'yes' 'installed' "$grokDest (read-only surface)"
+        Add-Row 'grok' 'no' 'skipped' 'no ~/.grok/skills - no legacy skills to remove'
     }
 } else {
-    Add-Row 'grok' 'manual' 'manual' 'paste the markdown - see adapters/grok/README.md'
-    Say 'Grok: nothing to install. Grok is a prompt surface with no local directory.'
-    Say "  Paste the skill bodies from $GrokSrc into Grok's custom instructions."
-    Say '  Grok READS ~/.autocache and narrates it. Grok cannot write to it.'
-    Say '  Anything Grok proposes must be executed by you, Claude Code, or Codex.'
+    $grokDetected = if ($grokDest -or (Test-Path -LiteralPath (Join-Path $UserHome '.grok'))) { 'yes' } else { 'no' }
+    Add-Row 'grok' $grokDetected 'plugin' 'grok plugin install josephwander-arch/autocache --trust'
+    Say 'Grok: nothing is copied for Grok Build. AutoCache installs as a native plugin:'
+    Say '  grok plugin install josephwander-arch/autocache --trust'
+    Say '  See adapters/grok/README.md for trust, enable, and verification steps.'
 }
 Say ''
 
