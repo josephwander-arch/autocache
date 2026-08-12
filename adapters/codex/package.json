@@ -2,5 +2,5 @@
   "name": "autocache-codex-adapter",
   "private": true,
   "type": "commonjs",
-  "description": "Pins CommonJS resolution for install.js regardless of any repository-root package.json. Not a dependency manifest - Autocache has zero npm dependencies."
+  "description": "Pins CommonJS resolution for install.js regardless of any repository-root package.json. Not a dependency manifest - the AutoCache native core has zero npm dependencies."
 }

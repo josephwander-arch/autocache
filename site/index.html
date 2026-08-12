@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Autocache - your agent stops forgetting what it was doing</title>
-<meta name="description" content="Free session continuity for AI coding agents. Hooks capture, plain JSON persists, the next session restores. Node, no dependencies, local state.">
+<meta name="description" content="Free local session continuity for AI coding agents. Native plugins or explicit MCP tools capture, plain JSON persists, and the next session restores.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23111417'/%3E%3Cpath d='M14 22h36M14 32h24M14 42h30' stroke='%233fb27f' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
@@ -471,8 +471,8 @@
 <section id="how">
   <div class="wrap">
     <div class="eyebrow">How it works</div>
-    <h2 class="sec">Three moving parts. All of them are files.</h2>
-    <p class="lede">No MCP server, no daemon, no compiled binary, no signing chain. Node scripts your agent already has a runtime for, and JSON you can open in any editor.</p>
+    <h2 class="sec">One local core, fitted to each host.</h2>
+    <p class="lede">Claude Code, Codex, and Grok Build use dependency-free Node hooks and plain JSON. Local-model hosts use an optional MCP bridge to call the same state operations. No compiled binary, hosted service, or signing chain.</p>
 
     <div class="panels">
       <div class="panel">
@@ -555,13 +555,14 @@ Stop              checkpoint the arc</pre>
 <section id="install">
   <div class="wrap">
     <div class="eyebrow">Install</div>
-    <h2 class="sec">Under thirty seconds, on any of three surfaces.</h2>
-    <p class="lede">The hook scripts and the <code>~/.autocache/</code> state directory are shared verbatim. A session started under Claude Code is resumable under Codex.</p>
+    <h2 class="sec">Four distributions, one continuity core.</h2>
+    <p class="lede">Each surface keeps its own scoped store under <code>~/.autocache/stores/</code>. The state format, procedures, and deliberate cross-surface handoff contract stay the same.</p>
 
     <div class="tabs" role="tablist" aria-label="Install by surface">
       <button class="tab" id="tab-cc" role="tab" aria-controls="panel-cc" aria-selected="true" data-panel="panel-cc">Claude Code</button>
       <button class="tab" id="tab-codex" role="tab" aria-controls="panel-codex" aria-selected="false" data-panel="panel-codex">Codex</button>
       <button class="tab" id="tab-grok" role="tab" aria-controls="panel-grok" aria-selected="false" data-panel="panel-grok">Grok</button>
+      <button class="tab" id="tab-local" role="tab" aria-controls="panel-local" aria-selected="false" data-panel="panel-local">Local hosts</button>
     </div>
 
     <div class="tabpanel" id="panel-cc" role="tabpanel" aria-labelledby="tab-cc">
@@ -576,7 +577,7 @@ Stop              checkpoint the arc</pre>
     </div>
 
     <div class="tabpanel" id="panel-codex" role="tabpanel" aria-labelledby="tab-codex" hidden>
-      <p class="note">Codex is not the plugin format. The installer materializes the same skills, hooks, and rules into the real directories under <code>~/.codex/</code>.</p>
+      <p class="note">Codex loads AutoCache's first-class plugin for visible skills. The companion adapter installs Codex-owned hooks, rules, and the session-summarizer agent until plugin-bundled hooks are proven in the installed runtime.</p>
       <div class="cmd">
         <span class="label">macOS and Linux</span>
         <button class="copy" type="button">Copy</button>
@@ -591,14 +592,24 @@ Stop              checkpoint the arc</pre>
     </div>
 
     <div class="tabpanel" id="panel-grok" role="tabpanel" aria-labelledby="tab-grok" hidden>
-      <p class="note">Grok is a skill and prompt surface, not a hook surface. Autocache ships markdown only there. Grok <b>reads</b> <code>~/.autocache/</code> and narrates what is open; it does not write state and it cannot record a session on its own. Start and record arcs from Claude Code or Codex, then read them from Grok.</p>
+      <p class="note">Grok Build loads AutoCache as a native plugin with skills, commands, agents, and lifecycle hooks. Grok keeps control of native worker execution; AutoCache records durable local continuity and worker receipts around it. Plain grok.com chat without local plugin access is a different surface.</p>
       <div class="cmd">
-        <span class="label">Fetch the skill markdown</span>
+        <span class="label">Install from GitHub</span>
         <button class="copy" type="button">Copy</button>
-<pre>git clone https://github.com/josephwander-arch/autocache
-cd autocache/surfaces/grok</pre>
+<pre>grok plugin install josephwander-arch/autocache --trust</pre>
       </div>
-      <p class="after">Paste the skill bodies into your Grok skill directory. Read-only by design; see <code>docs/install-grok.md</code> for the exact limits.</p>
+      <p class="after">Reload plugins or start a new session. Verify source shape with <code>grok plugin validate .</code> and loader discovery after install with <code>grok inspect --json</code>.</p>
+    </div>
+
+    <div class="tabpanel" id="panel-local" role="tabpanel" aria-labelledby="tab-local" hidden>
+      <p class="note">One generic MCP distribution supplies profiles for LM Studio, Jan, and Open WebUI. Ollama is the model engine behind an MCP-capable host, not the plugin loader itself.</p>
+      <div class="cmd">
+        <span class="label">Install the locked bridge dependencies</span>
+        <button class="copy" type="button">Copy</button>
+<pre>cd adapters/local-hosts/mcp-server
+npm ci --ignore-scripts</pre>
+      </div>
+      <p class="after">Select the host template under <code>adapters/local-hosts/</code>. These hosts call explicit continuity tools; automatic lifecycle capture is claimed only where the host actually exposes compatible hooks.</p>
     </div>
   </div>
 </section>
@@ -615,7 +626,7 @@ cd autocache/surfaces/grok</pre>
       </div>
       <div class="not">
         <h3>It does not phone home</h3>
-        <p>No network calls at runtime. No analytics on this page either: no CDN, no web fonts, no tracker. Telemetry exists as a flag in <code>config.json</code> and it is off unless you turn it on.</p>
+        <p>No outbound product or telemetry calls. Native hooks use no network. The optional local-host bridge listens only on local stdio or loopback HTTP by default. This page has no CDN, web fonts, analytics, or tracker.</p>
       </div>
       <div class="not">
         <h3>It is not a prompt cache</h3>
@@ -646,7 +657,7 @@ cd autocache/surfaces/grok</pre>
 
     <div class="upgrade-box">
       <h3>Autonomous</h3>
-      <p class="lede">Everything in Autocache, unchanged, plus an MCP server that indexes what you have already accumulated. Exactly what it adds:</p>
+      <p class="lede">Everything in AutoCache, unchanged, plus the Autonomous knowledge engine. The generic AutoCache MCP bridge only transports continuity tools; Autonomous adds the indexing and learning capabilities below:</p>
       <ul class="adds">
         <li><b>Extraction</b> - corrections, decisions, and discoveries become durable, typed records instead of scrollback.</li>
         <li><b>Retrieval</b> - semantic, lexical, and graph search over the corpus, not a grep over one directory.</li>

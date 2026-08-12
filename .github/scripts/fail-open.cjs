@@ -3,10 +3,10 @@
  * FAIL-OPEN REGRESSION TEST - the most important job in CI.
  *
  * A continuity tool that breaks the session it is meant to protect is worse than
- * no tool. Every hook and every adapter must exit 0 no matter what it is fed:
- * malformed stdin, empty stdin, a nonexistent or unwritable AUTOCACHE_HOME, a
- * corrupt state directory. This script pipes each of those into every script
- * under hooks/ and adapters/ and asserts the exit code is 0 in every case.
+ * no tool. Every lifecycle hook and hook-shaped adapter must exit 0 no matter
+ * what it is fed: malformed stdin, empty stdin, a nonexistent or unwritable
+ * AUTOCACHE_HOME, or a corrupt state directory. Standalone servers are excluded:
+ * their startup and input contracts must fail closed and are tested separately.
  *
  * It also asserts that stdout, when it looks like JSON, actually parses - a hook
  * that emits half an object corrupts the harness payload even while exiting 0.
@@ -23,11 +23,16 @@ const { spawnSync } = require('child_process');
 const repoRoot = path.resolve(__dirname, '..', '..');
 const TARGET_DIRS = ['hooks', 'adapters'];
 const HOOK_TIMEOUT_MS = 20000;
+const FAIL_CLOSED_COMPONENT_DIRS = [
+  path.resolve(repoRoot, 'adapters', 'local-hosts', 'mcp-server')
+];
 
 // Installers are excluded: they are not in the session path, so they cannot break a
-// session, and probing them repeatedly would actually install. Everything else under
-// hooks/ and adapters/ - including shared libraries - is probed, because a library
-// that throws on load takes its hook down with it.
+// session, and probing them repeatedly would actually install. Standalone MCP servers
+// are also excluded because missing dependencies, invalid startup, and malformed MCP
+// traffic must fail closed. Everything else under hooks/ and adapters/ - including
+// shared hook libraries - is probed because a library that throws on load takes its
+// hook down with it.
 const SKIP_FILE = /(^|[-_.])install(er)?\.(js|cjs|mjs)$/i;
 
 const isWindows = process.platform === 'win32';
@@ -46,6 +51,7 @@ function walk(dir, out) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      if (FAIL_CLOSED_COMPONENT_DIRS.includes(path.resolve(full))) continue;
       walk(full, out);
     } else if (entry.isFile() && /\.(js|cjs|mjs)$/.test(entry.name) && !SKIP_FILE.test(entry.name)) {
       out.push(full);
@@ -309,5 +315,5 @@ if (failures > 0) {
   console.error('Wrap the hook body in try/catch and end every path in process.exit(0).');
   process.exit(1);
 }
-console.log('every hook and adapter exited 0 under every failure mode.');
+console.log('every lifecycle hook and hook adapter exited 0 under every failure mode.');
 process.exit(0);

@@ -717,9 +717,110 @@ function surfaceName(input) {
       }
     }
     if (process.env.AUTOCACHE_SURFACE) return String(process.env.AUTOCACHE_SURFACE).trim();
+    if (process.env.GROK_PLUGIN_ROOT) return 'grok';
     if (process.env.CLAUDE_PLUGIN_ROOT) return 'claude-code';
   } catch (e) { /* fall through */ }
   return 'unknown';
+}
+
+/**
+ * Grok's native hook envelope uses camelCase while Claude and Codex use the
+ * snake_case field names the shared hook bodies were written against. Copy
+ * top-level aliases only: nested tool input belongs to the tool and must stay
+ * byte-for-byte in its original schema.
+ */
+function normalizeHookInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out = Object.assign({}, input);
+  // The worker-session-identity marker is internal: only the setter below may
+  // establish it. A host payload arriving with the key (replayed or forwarded
+  // event) must not steer parent resolution.
+  delete out.__autocache_worker_session_identity;
+  for (const key of Object.keys(input)) {
+    if (!/[A-Z]/.test(key)) continue;
+    const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    if (!(snake in out)) out[snake] = input[key];
+  }
+
+  // Grok names lifecycle worker fields subagentId/subagentType. Start and stop
+  // carry both values. Child tool events carry subagentType and use sessionId
+  // as the child identity, so mark that special case for bounded parent lookup.
+  if (!out.agent_id && typeof out.subagent_id === 'string') out.agent_id = out.subagent_id;
+  if (!out.agent_type && typeof out.subagent_type === 'string') out.agent_type = out.subagent_type;
+  // Hosts disagree on the event-name VALUE casing (Grok registers PascalCase
+  // 'PreToolUse' like Claude; fixtures and some adapters send snake_case), so
+  // compare separator-free lowercase - 'PreToolUse', 'preToolUse', and
+  // 'pre_tool_use' must all bind, or child events fall through to the lead.
+  const event = String(out.hook_event_name || '').toLowerCase().replace(/[_-]/g, '');
+  if (!out.agent_id && out.subagent_type && /^(pretooluse|posttooluse|posttoolusefailure)$/.test(event)
+      && typeof out.session_id === 'string' && out.session_id) {
+    out.agent_id = out.session_id;
+    out.__autocache_worker_session_identity = true;
+  }
+  return out;
+}
+
+/**
+ * Grok child tool events identify the child session but omit its parent. Match
+ * that child to a still-active start receipt. The scan is deliberately bounded
+ * and returns null on ambiguity or corruption.
+ */
+function activeWorkerIdentityById(workerId) {
+  try {
+    const wanted = String(workerId || '').trim();
+    if (!wanted) return null;
+    const root = resolvePath('workers');
+    // Newest-first before the bound: readdir order is arbitrary and workers/
+    // accumulates for the life of the store, so an unordered cap could slice
+    // out the live parent while keeping dozens of finished ones.
+    const parents = fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        let at = 0;
+        try { at = fs.statSync(path.join(root, entry.name)).mtimeMs; } catch (e) { /* unreadable sorts last */ }
+        return { name: entry.name, at };
+      })
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 100);
+    let match = null;
+    for (const parent of parents) {
+      const dir = path.join(root, parent.name, safeName(wanted));
+      let names = [];
+      try { names = fs.readdirSync(dir); } catch (e) { continue; }
+      const newest = (prefix) => {
+        let best = null;
+        for (const name of names) {
+          if (name.indexOf(prefix + '_') !== 0 || !name.endsWith('.json')) continue;
+          const full = path.join(dir, name);
+          let mtime = 0;
+          try { mtime = fs.statSync(full).mtimeMs; } catch (e) { continue; }
+          if (!best || mtime > best.mtime) best = { full: full, mtime: mtime };
+        }
+        if (!best) return null;
+        try {
+          const record = JSON.parse(fs.readFileSync(best.full, 'utf8'));
+          return { record: record, mtime: best.mtime };
+        } catch (e) { return null; }
+      };
+      const start = newest('start');
+      const stop = newest('stop');
+      if (!start || start.record.worker_id !== wanted) continue;
+      const startAt = Date.parse(start.record.recorded_at || '') || start.mtime;
+      const stopAt = stop ? (Date.parse(stop.record.recorded_at || '') || stop.mtime) : -1;
+      if (stop && stopAt >= startAt) continue;
+      const candidate = {
+        parent_session_id: String(start.record.parent_session_id || parent.name),
+        worker_id: wanted,
+        worker_type: String(start.record.worker_type || ''),
+        surface: String(start.record.surface || 'grok')
+      };
+      if (match && match.parent_session_id !== candidate.parent_session_id) return null;
+      match = candidate;
+    }
+    return match;
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
@@ -732,6 +833,24 @@ function workerIdentity(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
     const workerId = typeof input.agent_id === 'string' ? input.agent_id.trim() : '';
     if (!workerId) return null;
+    if (input.__autocache_worker_session_identity === true) {
+      const active = activeWorkerIdentityById(workerId);
+      if (active) {
+        if (!active.worker_type && typeof input.agent_type === 'string') {
+          active.worker_type = input.agent_type.trim();
+        }
+        active.surface = surfaceName(input);
+        return active;
+      }
+      // The child is identified but its parent is not. Isolate it under an
+      // explicit unknown parent rather than risk mutating the lead arc.
+      return {
+        parent_session_id: 'unknown-parent',
+        worker_id: workerId,
+        worker_type: typeof input.agent_type === 'string' ? input.agent_type.trim() : '',
+        surface: surfaceName(input)
+      };
+    }
     return {
       parent_session_id: typeof input.session_id === 'string' && input.session_id.trim()
         ? input.session_id.trim() : 'unknown-session',
@@ -1569,7 +1688,7 @@ function readStdinJSON() {
     if (!raw || !raw.trim()) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return parsed;
+    return normalizeHookInput(parsed);
   } catch (e) {
     return {};
   }
@@ -1694,6 +1813,7 @@ module.exports = {
   lastSession: lastSession,
   findings: findings,
   surfaceName: surfaceName,
+  normalizeHookInput: normalizeHookInput,
   workerIdentity: workerIdentity,
   activeWorkerIds: activeWorkerIds,
   appendWorkerEvent: appendWorkerEvent,

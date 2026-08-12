@@ -68,6 +68,26 @@ try {
 
   if (cfg.enabled === false || cfg.quiet === true) process.exit(0);
 
+  // Native workers remain owned by the host runtime. Never let a child
+  // PreToolUse event mutate the lead arc's nudge/checkpoint caches. Codex does
+  // not currently guarantee agent_id on every ordinary child tool event, so
+  // an untagged event is also treated as ambiguous while that parent session
+  // has an active worker. The tradeoff is intentionally conservative: lead
+  // advice pauses during that ambiguous window instead of misattributing a
+  // child action to the lead.
+  const worker = store.workerIdentity(input);
+  const parentSessionId = typeof input.session_id === 'string' ? input.session_id : '';
+  // The ambiguous-window pause is scoped to Codex, the one surface with the
+  // untagged-child gap (post-tool-use.js quarantines the same way). Claude
+  // guarantees agent_id on child tool events and Grok children bind by session
+  // identity, so on those surfaces an untagged event IS the lead - and a
+  // worker whose stop receipt was lost (timeout, crash) must not mute lead
+  // advice for the rest of the session.
+  const ambiguousDuringWorker = !worker && parentSessionId
+    && store.surfaceName(input).toLowerCase() === 'codex'
+    && store.activeWorkerIds(parentSessionId).length > 0;
+  if (worker || ambiguousDuringWorker) process.exit(0);
+
   const toolName = typeof input.tool_name === 'string' ? input.tool_name : '';
   const toolInput = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
 

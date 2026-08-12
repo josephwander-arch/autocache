@@ -113,6 +113,98 @@ async function main() {
   check(store.readBreadcrumb('bc_lead').tool_calls === 1, 'main-thread tool increments lead breadcrumb before workers start');
   check(store.arc().tool_calls === 1, 'main-thread tool increments lead arc before workers start');
 
+  // Grok emits camelCase envelopes and names workers subagentId/subagentType.
+  // Child tool events use the child sessionId as identity, so the shared input
+  // normalizer must bind them back to the parent start receipt.
+  const grokStart = runHook('subagent-start.js', {
+    sessionId: 'grok-parent',
+    subagentId: 'grok-worker',
+    subagentType: 'explorer',
+    hookEventName: 'subagent_start',
+    cwd: repoRoot
+  }, 'grok');
+  check(JSON.parse(grokStart.stdout).hookSpecificOutput.hookEventName === 'SubagentStart',
+    'Grok camelCase start injects the native worker boundary');
+  const beforeGrokPreArc = JSON.stringify(store.arc());
+  const beforeGrokPreLead = JSON.stringify(store.readBreadcrumb('bc_lead'));
+  const grokPre = runHook('pre-tool-use.js', {
+    sessionId: 'grok-worker',
+    subagentType: 'explorer',
+    // PascalCase is the value real Grok envelopes carry (its hooks.json
+    // registers 'PreToolUse'); the snake_case variant is asserted separately
+    // below. This line previously fed 'pre_tool_use', which masked a binding
+    // regex that only matched snake_case.
+    hookEventName: 'PreToolUse',
+    toolName: 'Edit',
+    toolInput: { file_path: path.join(repoRoot, 'README.md') }
+  }, 'grok');
+  check(grokPre.stderr === '', 'Grok child PreToolUse emits no lead advice');
+  check(JSON.stringify(store.arc()) === beforeGrokPreArc,
+    'Grok child PreToolUse does not mutate the lead arc');
+  check(JSON.stringify(store.readBreadcrumb('bc_lead')) === beforeGrokPreLead,
+    'Grok child PreToolUse does not mutate the lead breadcrumb');
+  const beforeGrokTool = store.readBreadcrumb('bc_lead').tool_calls;
+  runHook('post-tool-use.js', {
+    sessionId: 'grok-worker',
+    subagentType: 'explorer',
+    hookEventName: 'PostToolUse',
+    toolName: 'Edit',
+    toolUseId: 'grok-tool-1',
+    toolInput: { file_path: 'src/grok-child.js' }
+  }, 'grok');
+  check(store.readBreadcrumb('bc_lead').tool_calls === beforeGrokTool,
+    'Grok child tool does not increment the lead breadcrumb');
+  // snake_case event values must keep binding too (adapter/back-compat shape).
+  const beforeGrokSnakeArc = JSON.stringify(store.arc());
+  runHook('pre-tool-use.js', {
+    sessionId: 'grok-worker',
+    subagentType: 'explorer',
+    hookEventName: 'pre_tool_use',
+    toolName: 'Read',
+    toolInput: { file_path: path.join(repoRoot, 'README.md') }
+  }, 'grok');
+  check(JSON.stringify(store.arc()) === beforeGrokSnakeArc,
+    'Grok snake_case child event value still binds away from the lead arc');
+  // A hostile or replayed payload carrying the internal identity marker with
+  // explicit lead identity must not be rerouted through the receipt scan.
+  const beforeSpoofArc = JSON.stringify(store.arc());
+  runHook('post-tool-use.js', {
+    session_id: 'lead-session',
+    agent_id: 'grok-worker',
+    __autocache_worker_session_identity: true,
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Edit',
+    tool_use_id: 'spoof-tool-1',
+    tool_input: { file_path: 'src/spoofed.js' }
+  }, 'grok');
+  check(JSON.stringify(store.arc()) === beforeSpoofArc,
+    'Inbound identity-marker key is stripped and cannot reroute attribution');
+  const spoofEvents = path.join(root, 'workers', 'lead-session', 'grok-worker', 'events.jsonl');
+  check(fs.existsSync(spoofEvents),
+    'Explicitly tagged worker event lands under its declared parent, not unknown-parent');
+  const grokEvents = path.join(root, 'workers', 'grok-parent', 'grok-worker', 'events.jsonl');
+  check(fs.existsSync(grokEvents), 'Grok child tool binds to its parent worker stream');
+  check(fs.readFileSync(grokEvents, 'utf8').includes('src/grok-child.js'),
+    'Grok worker stream preserves child write metadata');
+  const grokStop = runHook('subagent-stop.js', {
+    sessionId: 'grok-parent',
+    subagentId: 'grok-worker',
+    subagentType: 'explorer',
+    hookEventName: 'subagent_stop',
+    lastAssistantMessage: 'Grok worker finished and verified its bounded task.',
+    stopHookActive: false,
+    cwd: repoRoot
+  }, 'grok');
+  check(JSON.parse(grokStop.stdout).systemMessage.includes('[worker:'),
+    'Grok camelCase stop writes a reconcilable result receipt');
+  const grokStops = filesUnder(path.join(root, 'workers', 'grok-parent', 'grok-worker'),
+    (f) => path.basename(f).startsWith('stop_'));
+  check(grokStops.length === 1, 'Grok worker has one immutable stop receipt');
+  const grokStopRec = JSON.parse(fs.readFileSync(grokStops[0], 'utf8'));
+  check(grokStopRec.surface === 'grok', 'Grok worker receipt retains surface attribution');
+  check(grokStopRec.final_message === 'Grok worker finished and verified its bounded task.',
+    'Grok stop normalizes lastAssistantMessage without changing content');
+
   const start = runHook('subagent-start.js', {
     session_id: 'parent-session',
     turn_id: 'turn-1',
@@ -123,10 +215,40 @@ async function main() {
   }, 'codex');
   const startOut = JSON.parse(start.stdout);
   check(startOut.hookSpecificOutput.hookEventName === 'SubagentStart', 'start injects native worker boundary');
-  const starts = filesUnder(path.join(root, 'workers'), (f) => path.basename(f).startsWith('start_'));
+  const starts = filesUnder(path.join(root, 'workers', 'parent-session', 'worker-main'),
+    (f) => path.basename(f).startsWith('start_'));
   check(starts.length === 1, 'one immutable start receipt written');
   const startRec = JSON.parse(fs.readFileSync(starts[0], 'utf8'));
   check(startRec.chain_head_id === 'bc_lead', 'start receipt snapshots lead chain head');
+
+  const beforeCodexPreArc = JSON.stringify(store.arc());
+  const beforeCodexPreLead = JSON.stringify(store.readBreadcrumb('bc_lead'));
+  const codexPre = runHook('pre-tool-use.js', {
+    session_id: 'parent-session',
+    agent_id: 'worker-main',
+    agent_type: 'explorer',
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(repoRoot, 'README.md') }
+  }, 'codex');
+  check(codexPre.stderr === '', 'tagged Codex child PreToolUse emits no lead advice');
+  check(JSON.stringify(store.arc()) === beforeCodexPreArc,
+    'tagged Codex child PreToolUse does not mutate the lead arc');
+  check(JSON.stringify(store.readBreadcrumb('bc_lead')) === beforeCodexPreLead,
+    'tagged Codex child PreToolUse does not mutate the lead breadcrumb');
+
+  const ambiguousPre = runHook('pre-tool-use.js', {
+    session_id: 'parent-session',
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(repoRoot, 'README.md') }
+  }, 'codex');
+  check(ambiguousPre.stderr === '',
+    'untagged Codex PreToolUse is quarantined from lead advice while a worker is active');
+  check(JSON.stringify(store.arc()) === beforeCodexPreArc,
+    'untagged Codex PreToolUse cannot mutate the lead arc during worker ambiguity');
+  check(JSON.stringify(store.readBreadcrumb('bc_lead')) === beforeCodexPreLead,
+    'untagged Codex PreToolUse cannot mutate the lead breadcrumb during worker ambiguity');
 
   runHook('post-tool-use.js', {
     session_id: 'parent-session',
@@ -172,7 +294,8 @@ async function main() {
   }, 'codex');
   const stopOut = JSON.parse(stop.stdout);
   check(typeof stopOut.systemMessage === 'string' && stopOut.systemMessage.includes('[worker:'), 'stop tells lead the exact reconciliation marker');
-  const stops = filesUnder(path.join(root, 'workers'), (f) => path.basename(f).startsWith('stop_'));
+  const stops = filesUnder(path.join(root, 'workers', 'parent-session', 'worker-main'),
+    (f) => path.basename(f).startsWith('stop_'));
   check(stops.length === 1, 'one immutable stop receipt written');
   const stopRec = JSON.parse(fs.readFileSync(stops[0], 'utf8'));
   check(stopRec.chain_head_id_at_start === 'bc_lead', 'stop receipt retains original parent head');

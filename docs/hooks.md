@@ -14,7 +14,9 @@ plugin paths contain spaces on Windows.
 
 ## The contract every hook honors
 
-**Input** arrives as a single JSON object on stdin. Common fields across events:
+**Input** arrives as a single JSON object on stdin. The shared reader accepts the
+snake_case envelope used by Claude/Codex and the camelCase envelope used by Grok,
+then exposes the normalized common fields below:
 
 | Field | Meaning |
 |---|---|
@@ -24,6 +26,9 @@ plugin paths contain spaces on Windows.
 | `hook_event_name` | The event that fired |
 | `agent_id` | Stable native worker id when the event fires inside a subagent |
 | `agent_type` | Native worker profile/type when supplied by the harness |
+
+Grok lifecycle events use `subagentId`/`subagentType`; those normalize to
+`agent_id`/`agent_type`. Nested `toolInput` remains untouched.
 
 Event-specific fields are listed per hook below.
 
@@ -177,7 +182,7 @@ owner.
 
 ## SubagentStart - `hooks/subagent-start.js`
 
-**Fires:** when Codex or Claude starts a native subagent.
+**Fires:** when Codex, Claude, or Grok Build starts a native subagent.
 
 **Input:** common fields, plus `agent_id`, `agent_type`, and optional `turn_id`.
 
@@ -248,10 +253,13 @@ surfaces - only the adapter differs.
 |---|---|
 | Claude Code | Native worker hooks plus native-team task/idle receipts |
 | Codex | Maps the common hooks plus `SubagentStart`/`SubagentStop` |
-| Grok | Read-only. No hooks. Grok narrates state and does not write it |
+| Grok Build | Native manifest and supported-event map; normalizes camelCase envelopes and native subagent fields |
+| Local-model hosts | MCP bridge; explicit continuity tools because no lifecycle hook contract is assumed |
 
-Adapters are linted and fail-open-tested in CI on exactly the same terms as the
-hooks.
+Lifecycle adapters are linted and fail-open-tested in CI on exactly the same terms
+as the hooks. The local-host MCP bridge is a standalone server, not a hook: invalid
+startup or protocol input must fail closed, and its separate transport/safety suite
+tests that contract.
 
 ---
 

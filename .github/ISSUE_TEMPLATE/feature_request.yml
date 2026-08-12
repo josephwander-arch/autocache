@@ -19,8 +19,9 @@ body:
         an index and a running server, which is why they are the paid tier. Requests for
         them will be closed with a pointer to docs/upgrade.md rather than left open.
 
-        Also fixed: zero npm dependencies, no binary in v1, no network calls, and every
-        hook fails open.
+        Also fixed: zero dependencies in the native hook core, no compiled binary,
+        no outbound service/telemetry calls, and every hook fails open. The optional
+        local-host MCP bridge keeps its official dependencies isolated and locked.
 
   - type: textarea
     id: problem
@@ -46,7 +47,8 @@ body:
       options:
         - Claude Code
         - Codex
-        - Grok
+        - Grok Build
+        - Local-model hosts
         - All surfaces
     validations:
       required: true
@@ -56,13 +58,13 @@ body:
     attributes:
       label: Constraints this proposal respects
       options:
-        - label: Node standard library only - no npm dependencies
+        - label: Native hook core remains dependency-free; bridge dependencies stay isolated and locked
           required: true
-        - label: No network calls
+        - label: No outbound service or telemetry calls; HTTP remains loopback by default
           required: true
         - label: Fails open - cannot block, crash, or hang a session
           required: true
-        - label: Does not require an index, a corpus, or a running server
+        - label: Does not add an index, corpus, extraction, retrieval, or knowledge server
           required: true
 
   - type: textarea

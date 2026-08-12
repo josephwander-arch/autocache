@@ -71,6 +71,58 @@ if (parsed.has(pluginManifest)) {
   ]);
 }
 
+const grokPluginManifest = '.grok-plugin/plugin.json';
+if (parsed.has(grokPluginManifest)) {
+  failed += requireFields(grokPluginManifest, parsed.get(grokPluginManifest), [
+    'name',
+    'description',
+    'version',
+    'skills',
+    'commands',
+    'agents',
+    'hooks'
+  ]);
+}
+
+const grokHooksManifest = 'adapters/grok/hooks/hooks.json';
+if (parsed.has(grokHooksManifest)) {
+  const doc = parsed.get(grokHooksManifest);
+  const eventMap = doc && doc.hooks;
+  const GROK_EVENTS = new Set([
+    'SessionStart',
+    'UserPromptSubmit',
+    'PreToolUse',
+    'PostToolUse',
+    'SubagentStart',
+    'SubagentStop',
+    'Stop'
+  ]);
+  if (!eventMap || typeof eventMap !== 'object' || Array.isArray(eventMap)) {
+    console.error('FAIL  ' + grokHooksManifest + ' :: expected a hooks object');
+    failed += 1;
+  } else {
+    for (const [event, matchers] of Object.entries(eventMap)) {
+      if (!GROK_EVENTS.has(event)) {
+        console.error('FAIL  ' + grokHooksManifest + ' :: unsupported Grok event "' + event + '"');
+        failed += 1;
+      }
+      for (const matcher of (Array.isArray(matchers) ? matchers : [])) {
+        for (const hook of (matcher && Array.isArray(matcher.hooks) ? matcher.hooks : [])) {
+          const command = hook && typeof hook.command === 'string' ? hook.command : '';
+          if (!command.includes('"${GROK_PLUGIN_ROOT}')) {
+            console.error('FAIL  ' + grokHooksManifest + ' :: unquoted or missing ${GROK_PLUGIN_ROOT} in ' + event);
+            failed += 1;
+          }
+          if (!command.includes('--surface=grok')) {
+            console.error('FAIL  ' + grokHooksManifest + ' :: missing --surface=grok in ' + event);
+            failed += 1;
+          }
+        }
+      }
+    }
+  }
+}
+
 const hooksManifest = 'hooks/hooks.json';
 if (parsed.has(hooksManifest)) {
   const doc = parsed.get(hooksManifest);

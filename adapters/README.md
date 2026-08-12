@@ -1,49 +1,45 @@
-# Autocache adapters
+# AutoCache adapters
 
-Autocache is one state directory with many front ends.
+AutoCache has one continuity core and four distributions. The adapters translate
+surface conventions; they do not copy or fork the state engine.
 
 ```
-~/.autocache/          <- the state. Shared verbatim by every surface.
-hooks/*.js             <- the Node hook scripts. Shared verbatim by every hook surface.
-skills/*/SKILL.md      <- the skill bodies. Shared verbatim by every skill surface.
+~/.autocache/                 shared local state contract
+hooks/*.js                    shared lifecycle implementation
+skills/*/SKILL.md             shared skills
+commands/*.md                 shared commands
+agents/*.md                   shared agents
 ```
 
-An adapter never forks that shared material. An adapter only answers one question:
-**where does this surface expect these files to live, and how does it get told to run them?**
+| Distribution | Native integration | Adapter responsibility |
+|---|---|---|
+| Claude Code | plugin, hooks, skills, commands, agents | Claude manifest and Claude-only native-team events |
+| Codex | plugin skills plus adapter-installed hooks/rules/agent | materialize Codex-owned runtime files until plugin hooks are proven live |
+| Grok Build | plugin, hooks, skills, commands, agents | Grok manifest, supported-event map, camelCase envelope normalization |
+| Local-model hosts | MCP tools | one MCP bridge with LM Studio, Jan, and Open WebUI profiles |
 
-| Adapter | Surface kind | Writes state? | Materializes into |
-|---|---|---|---|
-| (none needed) | Claude Code | yes, via hooks | the plugin directory itself, loaded by `/plugin` |
-| `codex/` | Codex - real hook + skill directories | yes, via hooks | `~/.codex/skills`, `~/.codex/hooks`, `~/.codex/rules`, `~/.codex/agents` |
-| `grok/` | Grok - prompt/skill surface only | **no** | pasted or uploaded skill markdown |
+Ollama is covered by the local-host distribution as a model engine. Ollama itself
+is not the plugin client; run it behind Open WebUI, LM Studio, Jan, or another
+MCP-capable host.
 
-Because the hooks and the state layout are identical across adapters, a work arc
-started in Claude Code is resumable in Codex, and Grok can narrate that same arc
-without any of the three knowing about each other.
+Claude Code, Codex, and Grok use native lifecycle events. The generic MCP bridge
+cannot invent events a host does not expose, so its start, checkpoint, and close
+actions are explicit tools. That difference is disclosed in each host profile.
 
-Grok is the exception that has to be stated out loud rather than discovered:
-Grok **reads and narrates, it never writes**. See `grok/README.md`.
+## Drift rule
 
-## Installing
+An adapter may add only a manifest, registration map, installer, transport, or
+field translation required by its surface. Shared state logic stays under `hooks/`,
+and shared procedure stays under `skills/`, `commands/`, and `agents/`. A surface
+fix that belongs in the core is made once in the core and regression-tested from
+every affected adapter.
 
-From the repository root:
+## Entry points
 
-```sh
-./install.sh          # POSIX: macOS, Linux, Git Bash / WSL on Windows
-```
+- Claude Code: `.claude-plugin/`
+- Codex: `.codex-plugin/` plus `adapters/codex/install.js`
+- Grok Build: `.grok-plugin/` plus `adapters/grok/hooks/hooks.json`
+- Local hosts: `adapters/local-hosts/`
 
-```powershell
-.\install.ps1         # Windows PowerShell / PowerShell 7+
-```
-
-Both detect which surfaces are present, install into each, and print a per-surface
-result table. Both are idempotent and neither ever overwrites existing state under
-`~/.autocache/`.
-
-To drive a single adapter directly:
-
-```sh
-node adapters/codex/install.js            # install into ~/.codex
-node adapters/codex/install.js --dry-run  # show what would change, write nothing
-node adapters/codex/install.js --uninstall
-```
+See [the installation guide](../docs/install.md) for exact commands and proof
+states.
