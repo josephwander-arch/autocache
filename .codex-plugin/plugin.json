@@ -1,0 +1,40 @@
+{
+  "name": "autocache",
+  "version": "0.3.3+codex.20260812180004",
+  "description": "Local session continuity for Codex. Skills and a zero-dependency CLI manage breadcrumbs; native Codex hooks are installed separately by the bundled adapter.",
+  "author": {
+    "name": "AutoCache",
+    "email": "hello@autocache.ai",
+    "url": "https://autocache.ai"
+  },
+  "homepage": "https://autocache.ai",
+  "license": "MIT",
+  "keywords": [
+    "continuity",
+    "breadcrumbs",
+    "sessions",
+    "handoffs",
+    "local-first"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AutoCache",
+    "shortDescription": "Resume Codex work exactly where it stopped.",
+    "longDescription": "AutoCache keeps sessions, breadcrumbs, checkpoints, handoffs, reminders, and native-worker receipts in local JSON. Codex keeps its native worker machinery; AutoCache adds the durable continuity envelope around it.",
+    "developerName": "AutoCache",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://autocache.ai",
+    "privacyPolicyURL": "https://autocache.ai/privacy",
+    "termsOfServiceURL": "https://autocache.ai/terms",
+    "defaultPrompt": [
+      "Resume the work I was doing before this session.",
+      "Open a breadcrumb for this multi-step task.",
+      "Checkpoint this work so another session can continue."
+    ],
+    "brandColor": "#2F6BFF"
+  }
+}

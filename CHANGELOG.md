@@ -11,6 +11,23 @@ version bump and is called out here explicitly.
 
 ## [Unreleased]
 
+### Added
+
+- A first-class Codex plugin manifest and personal-marketplace development
+  flow. The plugin owns AutoCache's six skills; the Codex adapter's new
+  `--plugin-mode` installs native hooks, the rule, and the summarizer agent
+  without creating duplicate skill registrations.
+- A zero-dependency breadcrumb CLI for Codex and other skill-capable surfaces
+  without Claude-style slash commands. It covers start, step, pending work,
+  decisions, completion, abort, adoption, fork chains, retirement, backup,
+  status, and list operations against the same scoped JSON store as the hooks.
+
+### Fixed
+
+- `activeBreadcrumb()` now treats an explicit null `active.json` pointer as
+  idle state instead of an open breadcrumb. The old interpretation prevented
+  a new breadcrumb from starting after a normal completion or abort.
+
 ## [0.3.3] - 2026-08-12
 
 ### Fixed

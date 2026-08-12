@@ -270,6 +270,12 @@ function activeBreadcrumb() {
     const id = typeof active.id === 'string' ? active.id
       : (typeof active.breadcrumb_id === 'string' ? active.breadcrumb_id : null);
 
+    // A closed arc leaves an explicit null pointer. That pointer is state, not
+    // a breadcrumb record; treating it as open blocks the next start forever.
+    const hasRecordShape = !!(active.steps || active.name || active.title
+      || active.status || active.created_at || active.started_at);
+    if (!id && !hasRecordShape) return null;
+
     const isPointer = !active.steps && !active.name && !active.title && !!id;
     if (isPointer) {
       const full = readJSON('breadcrumbs/' + safeName(id) + '.json', null);

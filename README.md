@@ -33,8 +33,20 @@ nothing else to configure.
 
 ### Codex
 
-Codex has its own `~/.codex/` directories, so an installer materializes the same
-skills, hooks, and rules there.
+The first-class Codex plugin supplies AutoCache's visible skills and local
+breadcrumb CLI. Codex does not load native hooks from plugins, so the adapter
+installs the same hook scripts, rule, and session-summarizer agent without
+duplicating the plugin-owned skills.
+
+```sh
+codex plugin add autocache@personal
+node adapters/codex/install.js --plugin-mode
+```
+
+The personal marketplace is a local-development path. Published installers may
+use a different marketplace name while keeping the plugin id `autocache`.
+
+Direct installer fallback (when the plugin marketplace is unavailable):
 
 ```sh
 # inspect first, then run

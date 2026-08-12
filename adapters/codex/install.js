@@ -88,6 +88,7 @@ function parseArgs(argv) {
   const opts = {
     dryRun: false,
     link: false,
+    pluginMode: false,
     uninstall: false,
     help: false,
     quiet: false,
@@ -97,6 +98,7 @@ function parseArgs(argv) {
   for (const raw of argv) {
     if (raw === '--dry-run' || raw === '-n') opts.dryRun = true;
     else if (raw === '--link') opts.link = true;
+    else if (raw === '--plugin-mode') opts.pluginMode = true;
     else if (raw === '--uninstall') opts.uninstall = true;
     else if (raw === '--quiet' || raw === '-q') opts.quiet = true;
     else if (raw === '--help' || raw === '-h') opts.help = true;
@@ -115,6 +117,8 @@ const HELP = [
   '  --dry-run, -n        print the plan, write nothing',
   '  --link               symlink hooks and skills instead of copying',
   '                       (falls back to copying when the OS refuses)',
+  '  --plugin-mode        install hooks, rule, and agent but skip skills',
+  '                       (the first-class Codex plugin owns the skills)',
   '  --uninstall          remove what this installer added (never touches state)',
   '  --codex-home=<path>  install into a different Codex home (or set CODEX_HOME)',
   '  --repo=<path>        use a different repository root',
@@ -536,7 +540,11 @@ function main() {
   } else {
     if (!isDir(codexHome)) ensureDir(codexHome, opts);
     ensureStateRoot(opts);
-    installSkills(repoRoot, codexHome, opts);
+    if (opts.pluginMode) {
+      record('skip', 'skipped', path.join(codexHome, 'skills'), 'owned by the AutoCache plugin');
+    } else {
+      installSkills(repoRoot, codexHome, opts);
+    }
     if (isDir(repoHooks)) {
       placeTree(repoHooks, hooksDest, opts, hooksDest);
     } else {
@@ -564,7 +572,7 @@ function main() {
   // Machine-readable trailer, parsed by install.sh / install.ps1 for the result table.
   process.stdout.write('AUTOCACHE_RESULT changed=' + changed + ' unchanged=' + unchanged +
     ' failures=' + failures + ' mode=' +
-    (opts.uninstall ? 'uninstall' : opts.dryRun ? 'dry-run' : 'install') + '\n');
+    (opts.uninstall ? 'uninstall' : opts.dryRun ? 'dry-run' : opts.pluginMode ? 'plugin-mode' : 'install') + '\n');
   if (!failures && !opts.uninstall && !opts.dryRun) {
     process.stdout.write('Restart Codex or start a new session for the hooks to load.\n');
   }

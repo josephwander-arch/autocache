@@ -11,6 +11,27 @@ next session able to continue instead of restart.
 State: `~/.autocache/breadcrumbs/<id>.json`, with `breadcrumbs/active.json`
 pointing at the currently open one (or null). One open breadcrumb per arc.
 
+## Execution surface
+
+AutoCache does not require an MCP server. Claude Code loads the bundled
+`/breadcrumb` command. Codex and other skill-capable surfaces use the bundled
+zero-dependency CLI at `scripts/breadcrumb.js`; pass `--surface codex` when the
+runtime did not already set `AUTOCACHE_SCOPE`.
+
+Examples from this skill directory:
+
+```sh
+node scripts/breadcrumb.js start --surface codex --name "parser repair | targets: src/parser.js" --target src/parser.js --planned "repair parser" --planned "run tests"
+node scripts/breadcrumb.js step --surface codex --text "repair parser: malformed-row cases pass"
+node scripts/breadcrumb.js add --surface codex --text "document the rejection format"
+node scripts/breadcrumb.js status --surface codex --json
+node scripts/breadcrumb.js complete --surface codex --text "parser and regression tests verified"
+```
+
+Use the host's native tool layer when it already exposes equivalent breadcrumb
+operations, as CPC Autonomous does. Do not open a second local breadcrumb for the
+same arc; AutoCache's hooks can observe a configured external breadcrumb instead.
+
 ## When to open one
 
 Open before the first mutating tool call when any of these is true:
@@ -57,7 +78,7 @@ whether it gets an entry is a boundary, not a judgment call:
   micro-fix folds into the milestone it belongs to; recording it separately is
   noise.
 - **Still open when your output ends** - it MUST be appended as a pending step
-  (`/breadcrumb add`). No exceptions. Work that exists only in your head does not
+  (`/breadcrumb add` on Claude, CLI `add` elsewhere). No exceptions. Work that exists only in your head does not
   exist for the next session, and the next session is the whole point.
 
 The test is mechanical: at the end of every response, anything you know is open
@@ -66,7 +87,7 @@ and unrecorded gets appended before you stop.
 ## Decisions the arc cannot settle
 
 When the work hits a genuine fork - a question with 2-3 defensible answers - record
-it instead of guessing: `/breadcrumb decide` with the question, the options, your
+it instead of guessing: `/breadcrumb decide` or CLI `decide`, with the question, the options, your
 lean if you have one, and `waits_on`:
 
 - `waits_on: "user"` - only the user's actual answer resolves it. Ask; never
