@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Reminders"
+  short_description: "Local reminders and follow-ups"
+  default_prompt: "Use $autocache-reminders so I do not forget to come back to this."
+
+policy:
+  allow_implicit_invocation: true

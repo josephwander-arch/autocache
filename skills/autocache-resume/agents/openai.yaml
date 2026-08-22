@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Resume"
+  short_description: "Reconstruct what the last session was doing"
+  default_prompt: "Use $autocache-resume to work out where we left off."
+
+policy:
+  allow_implicit_invocation: true

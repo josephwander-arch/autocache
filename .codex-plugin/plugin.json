@@ -8,6 +8,7 @@
     "url": "https://autocache.ai"
   },
   "homepage": "https://autocache.ai",
+  "repository": "https://github.com/josephwander-arch/autocache",
   "license": "MIT",
   "keywords": [
     "continuity",

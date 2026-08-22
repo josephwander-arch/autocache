@@ -92,6 +92,10 @@ jobs:
       - name: Parse and shape-check every JSON file
         run: node .github/scripts/validate-json.cjs
 
+      - name: Validate shared plugin-package contract
+        shell: pwsh
+        run: ./scripts/validate-plugin-package.ps1
+
   # ---------------------------------------------------------------------------
   # THE MOST IMPORTANT JOB IN THIS FILE.
   #

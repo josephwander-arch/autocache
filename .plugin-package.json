@@ -1,0 +1,12 @@
+{
+  "layout": "root",
+  "hooksAreProduct": true,
+  "marketplaceName": "autocache",
+  "marketplaces": [".claude-plugin/marketplace.json"],
+  "advertisedProfiles": ["autocache"],
+  "profiles": {
+    "autocache": { "skills": 6, "mcp": false, "hookHosts": [] }
+  },
+  "parityGroups": [],
+  "notes": "layout=root because this repo IS the plugin - manifests sit at the root and the marketplace source is \"./\". hooksAreProduct=true because session capture through hooks is the entire function here, unlike a tool server where a guard hook must stay inert. mcp=false: the local-hosts MCP bridge is an optional adapter, not a server this plugin registers."
+}

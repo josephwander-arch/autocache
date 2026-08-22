@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Checkpoint"
+  short_description: "Save and restore a work snapshot"
+  default_prompt: "Use $autocache-checkpoint to save my place before something risky."
+
+policy:
+  allow_implicit_invocation: true

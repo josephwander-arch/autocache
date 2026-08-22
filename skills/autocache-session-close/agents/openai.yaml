@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Session Close"
+  short_description: "Durably close out a work arc"
+  default_prompt: "Use $autocache-session-close before we stop so nothing is lost."
+
+policy:
+  allow_implicit_invocation: true

@@ -6,7 +6,27 @@ import { fileURLToPath } from 'node:url';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 export const packageRoot = path.resolve(dirname, '..');
-export const repositoryRoot = path.resolve(dirname, '../../../..');
+// Locate the AutoCache root by looking for the files we actually need, walking up
+// from this module. The previous form hardcoded exactly four levels, which is only
+// true inside an intact checkout: any packaged or relocated install resolved to the
+// wrong directory and then threw "core files are missing", which reads like a
+// corrupt download rather than a path assumption. AUTOCACHE_ROOT overrides.
+function locateRepositoryRoot(start) {
+  const override = process.env.AUTOCACHE_ROOT;
+  if (override && fs.existsSync(path.join(override, 'hooks', 'lib', 'store.js'))) {
+    return path.resolve(override);
+  }
+  let current = start;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (fs.existsSync(path.join(current, 'hooks', 'lib', 'store.js'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  // Preserve the historical guess so behaviour is unchanged in a normal checkout.
+  return path.resolve(start, '../../../..');
+}
+export const repositoryRoot = locateRepositoryRoot(dirname);
 export const breadcrumbCliPath = path.join(
   repositoryRoot,
   'skills',

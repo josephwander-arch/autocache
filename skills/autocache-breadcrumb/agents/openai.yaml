@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Breadcrumb"
+  short_description: "Track a multi-step work arc"
+  default_prompt: "Use $autocache-breadcrumb to track this work so the next session can pick it up."
+
+policy:
+  allow_implicit_invocation: true

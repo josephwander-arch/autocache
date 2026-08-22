@@ -1,0 +1,7 @@
+interface:
+  display_name: "AutoCache Handoff"
+  short_description: "Write a continuation packet for another agent"
+  default_prompt: "Use $autocache-handoff to write this up for whoever picks it up next."
+
+policy:
+  allow_implicit_invocation: true

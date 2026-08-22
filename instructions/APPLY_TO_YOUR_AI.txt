@@ -1,0 +1,52 @@
+AUTOCACHE - ACTIVATION FROM A REPOSITORY OR MARKETPLACE INSTALL
+
+AutoCache gives a coding agent session continuity: hooks capture what you were
+doing, local JSON state persists it, and the next session restores it. Free
+tier covers sessions, breadcrumbs, checkpoints, self-state and reminders.
+
+This copy covers installing from the repository. <angle-bracket> placeholders
+mean "substitute your own path" - nothing renders tokens on this path.
+
+WHAT IT DOES AND DOES NOT DO
+
+State is local JSON on your machine. There is no corpus, no retrieval, and no
+telemetry. Hooks are the product here rather than an optional guard layer: they
+are how the arc gets captured, so a host that cannot run hooks gets the skills
+and the CLI but not automatic capture.
+
+AutoCache adds no file, browser, network, shell, or account privilege. It reads
+and writes its own state directory and nothing else.
+
+CLAUDE CODE
+
+  claude plugin marketplace add josephwander-arch/autocache
+  claude plugin install autocache@autocache
+
+Restart Claude Code. A new session should surface what the previous one was
+doing.
+
+CODEX
+
+  codex plugin marketplace add "<path-to-your-clone>"
+  codex plugin add autocache@autocache
+
+Native Codex hooks are installed separately by the bundled adapter under
+adapters/codex/. Open a fresh task afterwards.
+
+GROK BUILD
+
+  grok plugin install "<path-to-your-clone>"
+
+Review before accepting the trust prompt. Grok hooks live in
+adapters/grok/hooks/hooks.json and keep Grok in control of execution.
+
+OTHER HOSTS
+
+Hosts without hook support can still use the six skills and the commands in
+commands/. Capture becomes manual - ask the agent to record a breadcrumb or
+close the session - rather than automatic.
+
+VERIFYING IT WORKS
+
+Start a session, do a little work, then start a fresh one and ask what you were
+doing. If the answer is reconstructed rather than guessed, capture is running.
