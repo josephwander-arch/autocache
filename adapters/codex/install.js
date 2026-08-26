@@ -37,35 +37,35 @@ const HOOK_EVENTS = [
   {
     file: 'user-prompt-submit.js',
     event: 'UserPromptSubmit',
-    timeout: 5,
+    timeout: 10,
     statusMessage: 'Autocache prior-work check'
   },
   {
     file: 'pre-tool-use.js',
     event: 'PreToolUse',
     matcher: '*',
-    timeout: 5,
+    timeout: 10,
     statusMessage: 'Autocache advisory'
   },
   {
     file: 'post-tool-use.js',
     event: 'PostToolUse',
     matcher: '*',
-    timeout: 5,
+    timeout: 10,
     statusMessage: 'Autocache breadcrumb step'
   },
   {
     file: 'subagent-start.js',
     event: 'SubagentStart',
     matcher: '.*',
-    timeout: 5,
+    timeout: 10,
     statusMessage: 'Autocache recording native worker'
   },
   {
     file: 'subagent-stop.js',
     event: 'SubagentStop',
     matcher: '.*',
-    timeout: 5,
+    timeout: 10,
     statusMessage: 'Autocache saving native worker result'
   },
   {
