@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "autocache",
+  "display_name": "Autocache (AIWander)",
+  "version": "0.5.0",
+  "description": "Session continuity for Claude Desktop: explicit breadcrumbs, checkpoints, handoffs and reminders, kept as local JSON on this computer.",
+  "long_description": "Autocache keeps the state of a work arc on your own disk so the next chat can pick up where this one stopped. Claude Desktop chats have no lifecycle hooks, so nothing is captured automatically: Claude calls these tools explicitly (the Autocache skills tell it when).\n\n**Privacy.** State lives under `~/.autocache/stores/claude-desktop` as plain JSON files. No account, no telemetry, no network access: the server only reads and writes that local folder. Uninstalling the extension does not delete that folder; delete it yourself if you want the history gone.\n\nRuns on the Node.js runtime that Claude Desktop includes.",
+  "author": {
+    "name": "AIWander",
+    "email": "hello@autocache.ai",
+    "url": "https://autocache.ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/josephwander-arch/autocache.git"
+  },
+  "homepage": "https://autocache.ai",
+  "documentation": "https://github.com/josephwander-arch/autocache/blob/mcpb/desktop-extension-20261011/adapters/local-hosts/mcpb/README.md",
+  "support": "https://github.com/josephwander-arch/autocache/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/src/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/src/cli.js",
+        "stdio"
+      ],
+      "env": {
+        "AUTOCACHE_STORE_SCOPE": "claude-desktop",
+        "AUTOCACHE_MCP_ACTOR": "claude-desktop"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "autocache_status",
+      "description": "Read bounded health and continuity counts from the local Autocache store."
+    },
+    {
+      "name": "autocache_resume",
+      "description": "Read a resume packet: last session summary, active breadcrumb, latest checkpoint and due reminders."
+    },
+    {
+      "name": "autocache_breadcrumb_start",
+      "description": "Start one explicit breadcrumb; refuses when another is already active in this store scope."
+    },
+    {
+      "name": "autocache_breadcrumb_step",
+      "description": "Append one milestone to the active breadcrumb."
+    },
+    {
+      "name": "autocache_breadcrumb_complete",
+      "description": "Mark the active breadcrumb complete with an explicit outcome."
+    },
+    {
+      "name": "autocache_breadcrumb_abort",
+      "description": "Mark the active breadcrumb aborted with a reason, keeping its record."
+    },
+    {
+      "name": "autocache_checkpoint",
+      "description": "Save an explicit bounded checkpoint of the current work arc."
+    },
+    {
+      "name": "autocache_handoff",
+      "description": "Save a local continuation packet; sends nothing and transfers no ownership."
+    },
+    {
+      "name": "autocache_reminders_list",
+      "description": "List reminders from the local store."
+    },
+    {
+      "name": "autocache_reminders_add",
+      "description": "Add one reminder, optionally with an ISO-8601 due time or a recurrence."
+    }
+  ],
+  "tools_generated": false,
+  "prompts_generated": false,
+  "keywords": [
+    "mcp",
+    "continuity",
+    "breadcrumb",
+    "checkpoint",
+    "handoff",
+    "reminders",
+    "session",
+    "local-first"
+  ],
+  "license": "MIT",
+  "privacy_policies": [
+    "https://github.com/josephwander-arch/autocache/blob/mcpb/desktop-extension-20261011/adapters/local-hosts/mcpb/PRIVACY.md"
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "win32"
+    ],
+    "runtimes": {
+      "node": ">=20"
+    }
+  }
+}

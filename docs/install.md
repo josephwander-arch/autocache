@@ -102,8 +102,7 @@ lifecycle hooks. It sends camelCase event fields; the adapter normalizes only th
 top-level envelope and routes the event to the same hook implementation used by
 Claude Code and Codex.
 
-Install directly from the private repository (your Git credentials must have
-access):
+Install directly from the repository:
 
 ```sh
 grok plugin install josephwander-arch/autocache --trust
@@ -133,6 +132,7 @@ One MCP bridge serves three supported host profiles:
 | LM Studio | stdio | `adapters/local-hosts/lm-studio/` |
 | Jan | stdio or Streamable HTTP | `adapters/local-hosts/jan/` |
 | Open WebUI 0.6.31+ | Streamable HTTP | `adapters/local-hosts/open-webui/` |
+| Claude Desktop (Windows) | MCPB extension, stdio | `adapters/local-hosts/mcpb/` |
 
 Install the bridge's pinned dependencies:
 

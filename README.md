@@ -73,6 +73,10 @@ grok plugin install josephwander-arch/autocache --trust
 Reload plugins or start a new session, then verify loader discovery with
 `grok inspect --json`. Plain grok.com chat is a different, hookless surface.
 
+### Claude Desktop
+
+Download `autocache-0.5.0-win.mcpb` from the [releases page](https://github.com/josephwander-arch/autocache/releases) and double-click it (or Settings > Extensions > Advanced settings > Install Extension...). Claude Desktop supplies Node.js; no clone or `npm ci` is needed. Details: [adapters/local-hosts/mcpb/README.md](adapters/local-hosts/mcpb/README.md).
+
 ### Local-model hosts
 
 The generic distribution is one MCP bridge with tested profiles for LM Studio,

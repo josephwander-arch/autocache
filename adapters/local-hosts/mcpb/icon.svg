@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Autocache (AIWander) extension icon. Original geometric mark: three stacked layers with a resume marker. -->
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="#243B53"/>
+  <rect x="112" y="128" width="288" height="64" rx="32" ry="32" fill="#9AE6B4"/>
+  <rect x="112" y="224" width="288" height="64" rx="32" ry="32" fill="#68D391"/>
+  <rect x="112" y="320" width="208" height="64" rx="32" ry="32" fill="#38A169"/>
+  <circle cx="368" cy="352" r="32" fill="#F6E05E"/>
+</svg>

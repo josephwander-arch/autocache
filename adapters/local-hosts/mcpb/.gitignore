@@ -1,0 +1,4 @@
+# Build outputs of pack.ps1. Bundles belong on Releases, not in git.
+build/
+dist/
+*.mcpb
