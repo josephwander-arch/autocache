@@ -257,7 +257,7 @@ or another MCP-capable host rather than presented as a fourth host contract.
 
 ## GitHub repository
 
-Repository `josephwander-arch/autocache` remains private until separately promoted.
+Repository `josephwander-arch/autocache` is public (promoted 2026-10-11).
 It must contain:
 
 - `README.md` — what it is, the free/paid line, 30-second install, screenshot slot

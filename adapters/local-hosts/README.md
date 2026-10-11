@@ -11,6 +11,7 @@ layer and breadcrumb CLI; it does not copy or fork AutoCache's core.
 | LM Studio | MCP-capable desktop host | stdio | [`lm-studio/`](lm-studio/) |
 | Jan | MCP-capable desktop host | stdio | [`jan/`](jan/) |
 | Open WebUI 0.6.31+ | MCP-capable web host | Streamable HTTP | [`open-webui/`](open-webui/) |
+| Claude Desktop | MCP-capable desktop host (MCPB extension) | stdio | [`mcpb/`](mcpb/) |
 | Ollama | Inference backend, not the MCP client for this kit | none | [`ollama/`](ollama/) |
 
 LM Studio and Jan spawn the same Node process over stdio. Open WebUI reaches the
